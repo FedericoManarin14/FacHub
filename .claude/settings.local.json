@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npx create-vite@latest . --template react)",
+      "Bash(printf '\\\\n')",
+      "Bash(mv fachub/* .)",
+      "Bash(mv fachub/.* .)",
+      "Bash(rmdir fachub:*)"
+    ]
+  }
+}
