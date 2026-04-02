@@ -178,7 +178,7 @@ export default function Dashboard() {
       setRecentNotes(notes ?? [])
 
       // Chart
-      const slots = buildMonthSlots(6)
+      const slots = buildMonthSlots(12)
       setChartData(slots.map(({ year, month, label }) => {
         const revenue = (allLines ?? [])
           .filter(l => isSameMonth(l.date, year, month))
@@ -372,20 +372,9 @@ export default function Dashboard() {
 
             {/* ── Revenue chart ──────────────────────────── */}
             <section className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                  Fatturato ultimi 6 mesi
-                </h2>
-                <button
-                  onClick={() => { setImportFileError(''); setImportSuccess(''); fileInputRef.current?.click() }}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-navy-800 transition-colors border border-gray-200 hover:border-navy-300 px-2.5 py-1.5 rounded-lg"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                  </svg>
-                  Importa da Excel
-                </button>
-              </div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+                Fatturato ultimi 12 mesi
+              </h2>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -431,11 +420,22 @@ export default function Dashboard() {
 
             {/* ── Inactive customers ─────────────────────── */}
             <section>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                  Clienti senza ordini da +{INACTIVE_DAYS} giorni
-                </h2>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                    Clienti senza ordini da +{INACTIVE_DAYS} giorni
+                  </h2>
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-navy-800 text-white rounded-lg text-xs font-semibold hover:bg-navy-900 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Importa da Excel
+                </button>
               </div>
               {inactiveCustomers.length === 0 ? (
                 <div className="bg-white rounded-xl p-5 text-center text-gray-400 text-sm border border-gray-100">

@@ -26,6 +26,8 @@ export default function Products() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     fetchProducts()
@@ -86,6 +88,15 @@ export default function Products() {
     setSaving(false)
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    await supabase.from('products').delete().eq('id', deleteTarget.id)
+    setProducts(prev => prev.filter(p => p.id !== deleteTarget.id))
+    setDeleteTarget(null)
+    setDeleting(false)
+  }
+
   const tabCounts = {
     glues: products.filter(p => p.category === 'glues').length,
     abrasives: products.filter(p => p.category === 'abrasives').length,
@@ -144,30 +155,38 @@ export default function Products() {
             {filtered.map(product => {
               const salePrice = product.purchase_cost_kg * (1 + product.base_margin / 100)
               return (
-                <div
-                  key={product.id}
-                  className="bg-white rounded-xl p-4 border border-gray-100"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-navy-800">{product.name}</p>
-                      {product.type && (
-                        <p className="text-xs text-gray-400 mt-0.5">{product.type}</p>
-                      )}
+                <div key={product.id} className="flex items-stretch gap-2">
+                  <div className="flex-1 bg-white rounded-xl p-4 border border-gray-100 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-navy-800">{product.name}</p>
+                        {product.type && (
+                          <p className="text-xs text-gray-400 mt-0.5">{product.type}</p>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-semibold text-navy-700">
+                          {formatCurrency(product.purchase_cost_kg)}<span className="text-xs font-normal text-gray-400">/kg</span>
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Margine base: <span className="font-semibold text-gray-600">{product.base_margin}%</span>
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-semibold text-navy-700">
-                        {formatCurrency(product.purchase_cost_kg)}<span className="text-xs font-normal text-gray-400">/kg</span>
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Margine base: <span className="font-semibold text-gray-600">{product.base_margin}%</span>
-                      </p>
+                    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Prezzo vendita stimato</span>
+                      <span className="text-xs font-semibold text-green-600">{formatCurrency(salePrice)}/kg</span>
                     </div>
                   </div>
-                  <div className="mt-2 pt-2 border-t border-gray-50 flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Prezzo vendita stimato</span>
-                    <span className="text-xs font-semibold text-green-600">{formatCurrency(salePrice)}/kg</span>
-                  </div>
+                  <button
+                    onClick={() => setDeleteTarget(product)}
+                    className="flex-shrink-0 flex items-center justify-center w-10 bg-white border border-gray-100 rounded-xl text-gray-300 hover:text-red-500 hover:border-red-200 transition-colors"
+                    aria-label="Elimina prodotto"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               )
             })}
@@ -176,6 +195,32 @@ export default function Products() {
       </main>
 
       <BottomNav />
+
+      {/* Delete confirmation */}
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Elimina prodotto">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Sei sicuro di voler eliminare <span className="font-semibold text-navy-800">{deleteTarget?.name}</span>?
+            Tutti i suoi dati verranno persi.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="flex-1 py-3 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Annulla
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-1 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {deleting ? <Spinner size="sm" /> : null}
+              {deleting ? 'Eliminazione...' : 'Elimina'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Add Product Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Nuovo prodotto">

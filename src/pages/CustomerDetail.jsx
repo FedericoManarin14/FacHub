@@ -44,9 +44,9 @@ function formatCurrency(v) {
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(v ?? 0)
 }
 
-function getLast6Months() {
+function getLast12Months() {
   const months = []
-  for (let i = 5; i >= 0; i--) {
+  for (let i = 11; i >= 0; i--) {
     const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
     months.push({
       year:  d.getFullYear(),
@@ -133,7 +133,7 @@ export default function CustomerDetail() {
   useEffect(() => { fetchData() }, [fetchData])
 
   /* ── chart data ─────────────────────────────────────────── */
-  const chartData = getLast6Months().map(({ year, month, label }) => {
+  const chartData = getLast12Months().map(({ year, month, label }) => {
     const revenue = orderLines
       .filter(l => { const d = new Date(l.date); return d.getFullYear() === year && d.getMonth() + 1 === month })
       .reduce((s, l) => s + +l.quantity * +l.sale_price, 0)
@@ -476,7 +476,7 @@ export default function CustomerDetail() {
 
         {/* ── Revenue chart ────────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-gray-100 p-4">
-          <h2 className="font-semibold text-navy-800 mb-4">Fatturato ultimi 6 mesi</h2>
+          <h2 className="font-semibold text-navy-800 mb-4">Fatturato ultimi 12 mesi</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
