@@ -8,9 +8,9 @@ import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 
 const STATUS_CONFIG = {
-  ongoing: { label: 'In corso', color: 'bg-green-100 text-green-700 border-green-200' },
+  ongoing: { label: 'Attivo',    color: 'bg-green-100 text-green-700 border-green-200' },
   pending: { label: 'In attesa', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  expired: { label: 'Rifiutata', color: 'bg-red-100 text-red-700 border-red-200' },
+  expired: { label: 'Rifiutato', color: 'bg-red-100 text-red-700 border-red-200' },
 }
 
 const DOT_CONFIG = {
@@ -488,15 +488,15 @@ export default function CustomerList() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Stato offerta</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Stato cliente</label>
             <select
               value={form.offer_status}
               onChange={e => setForm(f => ({ ...f, offer_status: e.target.value }))}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white"
             >
-              <option value="ongoing">In corso</option>
+              <option value="ongoing">Attivo</option>
               <option value="pending">In attesa</option>
-              <option value="expired">Rifiutata</option>
+              <option value="expired">Rifiutato</option>
             </select>
           </div>
 
