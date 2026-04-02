@@ -6,7 +6,8 @@
       "Bash(printf '\\\\n')",
       "Bash(mv fachub/* .)",
       "Bash(mv fachub/.* .)",
-      "Bash(rmdir fachub:*)"
+      "Bash(rmdir fachub:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

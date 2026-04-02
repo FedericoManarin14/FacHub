@@ -25,7 +25,7 @@ function formatCurrency(val) {
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val ?? 0)
 }
 
-/** Returns { year, month (1‑based), label } for the last N months */
+/** Returns { year, month (1-based), label } for the last N months */
 function buildMonthSlots(n = 6) {
   const slots = []
   for (let i = n - 1; i >= 0; i--) {
@@ -33,8 +33,8 @@ function buildMonthSlots(n = 6) {
     d.setDate(1)
     d.setMonth(d.getMonth() - i)
     slots.push({
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,                           // 1‑based
+      year:  d.getFullYear(),
+      month: d.getMonth() + 1,
       label: d.toLocaleDateString('it-IT', { month: 'short', year: '2-digit' }),
     })
   }
@@ -46,7 +46,7 @@ function isSameMonth(dateStr, year, month) {
   return d.getFullYear() === year && d.getMonth() + 1 === month
 }
 
-/* ─── KPI card ──────────────────────────────────────────── */
+/* ─── KPI card ─────────────────────────────────────────── */
 function KpiCard({ icon, label, value, sub, subPositive }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-2">
@@ -56,7 +56,10 @@ function KpiCard({ icon, label, value, sub, subPositive }) {
       </div>
       <p className="text-2xl font-bold text-navy-800 leading-none">{value}</p>
       {sub !== undefined && (
-        <p className={`text-xs font-medium ${subPositive === true ? 'text-green-600' : subPositive === false ? 'text-red-500' : 'text-gray-400'}`}>
+        <p className={`text-xs font-medium ${
+          subPositive === true ? 'text-green-600' :
+          subPositive === false ? 'text-red-500' : 'text-gray-400'
+        }`}>
           {sub}
         </p>
       )}
@@ -64,7 +67,7 @@ function KpiCard({ icon, label, value, sub, subPositive }) {
   )
 }
 
-/* ─── custom tooltip ────────────────────────────────────── */
+/* ─── chart tooltip ────────────────────────────────────── */
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
@@ -75,14 +78,14 @@ function ChartTooltip({ active, payload, label }) {
   )
 }
 
-/* ═══════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const [chartData, setChartData]             = useState([])
-  const [kpis, setKpis]                       = useState(null)
-  const [inactiveCustomers, setInactiveCustomers] = useState([])
-  const [recentNotes, setRecentNotes]         = useState([])
-  const [loading, setLoading]                 = useState(true)
-  const [error, setError]                     = useState('')
+  const [chartData,          setChartData]          = useState([])
+  const [kpis,               setKpis]               = useState(null)
+  const [inactiveCustomers,  setInactiveCustomers]  = useState([])
+  const [recentNotes,        setRecentNotes]        = useState([])
+  const [loading,            setLoading]            = useState(true)
+  const [error,              setError]              = useState('')
   const navigate = useNavigate()
 
   useEffect(() => { fetchData() }, [])
@@ -91,32 +94,32 @@ export default function Dashboard() {
     try {
       setLoading(true)
 
-      // ── date boundaries ──────────────────────────────────
-      const now        = new Date()
-      const thisYear   = now.getFullYear()
-      const thisMonth  = now.getMonth() + 1          // 1‑based
+      // ── date boundaries ────────────────────────────────
+      const now       = new Date()
+      const thisYear  = now.getFullYear()
+      const thisMonth = now.getMonth() + 1
 
-      const prevDate   = new Date(now)
+      const prevDate  = new Date(now)
       prevDate.setMonth(prevDate.getMonth() - 1)
-      const prevYear   = prevDate.getFullYear()
-      const prevMonth  = prevDate.getMonth() + 1
+      const prevYear  = prevDate.getFullYear()
+      const prevMonth = prevDate.getMonth() + 1
 
-      // 7 months back (6 for chart + 1 more for prev‑month KPI)
+      // 7 months back window (6 chart + 1 prev-month KPI)
       const windowStart = new Date(now)
       windowStart.setMonth(windowStart.getMonth() - 6)
       windowStart.setDate(1)
       const windowStartStr = windowStart.toISOString().split('T')[0]
 
-      // 60‑day cutoff for active / inactive customers
+      // 60-day cutoff
       const cutoff60 = new Date()
       cutoff60.setDate(cutoff60.getDate() - INACTIVE_DAYS)
       const cutoff60Str = cutoff60.toISOString().split('T')[0]
 
-      // ── parallel fetches ─────────────────────────────────
+      // ── parallel fetches ───────────────────────────────
       const [
         { data: customers,     error: custErr  },
-        { data: ordersRaw,     error: ordErr   },
-        { data: allOrderLines, error: linesErr },
+        { data: allLines,      error: linesErr },
+        { data: recentLinesForActivity, error: actErr },
         { data: notes,         error: notesErr },
       ] = await Promise.all([
         supabase
@@ -124,17 +127,17 @@ export default function Dashboard() {
           .select('id, company_name, sector, offer_status')
           .order('company_name'),
 
-        // orders for inactive / active logic — all time
-        supabase
-          .from('orders')
-          .select('id, customer_id, date')
-          .order('date', { ascending: false }),
-
-        // order_lines joined via orders for the 7‑month window (chart + KPIs)
+        // Lines in the 7-month window for chart + KPIs
         supabase
           .from('order_lines')
-          .select('sale_price, purchase_price, quantity, orders!inner(date, customer_id)')
-          .gte('orders.date', windowStartStr),
+          .select('customer_id, date, sale_price, purchase_price, quantity')
+          .gte('date', windowStartStr),
+
+        // All lines ever, just customer_id + date for activity tracking
+        supabase
+          .from('order_lines')
+          .select('customer_id, date')
+          .order('date', { ascending: false }),
 
         supabase
           .from('customer_notes')
@@ -144,17 +147,17 @@ export default function Dashboard() {
       ])
 
       if (custErr)  throw custErr
-      if (ordErr)   throw ordErr
       if (linesErr) throw linesErr
+      if (actErr)   throw actErr
       if (notesErr) throw notesErr
 
-      // ── inactive customers ───────────────────────────────
+      // ── last order date per customer (for inactive list) ─
       const lastOrderMap = {}
-      for (const o of ordersRaw) {
-        if (!lastOrderMap[o.customer_id]) lastOrderMap[o.customer_id] = o.date
+      for (const l of (recentLinesForActivity ?? [])) {
+        if (!lastOrderMap[l.customer_id]) lastOrderMap[l.customer_id] = l.date
       }
 
-      const inactive = customers
+      const inactive = (customers ?? [])
         .filter(c => {
           const last = lastOrderMap[c.id]
           return !last || new Date(last) < cutoff60
@@ -166,55 +169,54 @@ export default function Dashboard() {
         }))
 
       setInactiveCustomers(inactive)
-      setRecentNotes(notes)
+      setRecentNotes(notes ?? [])
 
-      // ── revenue chart — last 6 months ───────────────────
+      // ── revenue chart — last 6 months ──────────────────
       const slots = buildMonthSlots(6)
       const chart = slots.map(({ year, month, label }) => {
-        const revenue = allOrderLines
-          .filter(l => isSameMonth(l.orders.date, year, month))
-          .reduce((sum, l) => sum + l.quantity * l.sale_price, 0)
+        const revenue = (allLines ?? [])
+          .filter(l => isSameMonth(l.date, year, month))
+          .reduce((sum, l) => sum + +l.quantity * +l.sale_price, 0)
         return { label, revenue: parseFloat(revenue.toFixed(2)) }
       })
       setChartData(chart)
 
-      // ── KPIs ─────────────────────────────────────────────
-      const thisMonthLines = allOrderLines.filter(l =>
-        isSameMonth(l.orders.date, thisYear, thisMonth))
-      const prevMonthLines = allOrderLines.filter(l =>
-        isSameMonth(l.orders.date, prevYear, prevMonth))
+      // ── KPIs ──────────────────────────────────────────
+      const thisLines = (allLines ?? []).filter(l => isSameMonth(l.date, thisYear, thisMonth))
+      const prevLines = (allLines ?? []).filter(l => isSameMonth(l.date, prevYear, prevMonth))
 
-      const revenueThis = thisMonthLines.reduce((s, l) => s + l.quantity * l.sale_price, 0)
-      const revenuePrev = prevMonthLines.reduce((s, l) => s + l.quantity * l.sale_price, 0)
+      const revenueThis = thisLines.reduce((s, l) => s + +l.quantity * +l.sale_price, 0)
+      const revenuePrev = prevLines.reduce((s, l) => s + +l.quantity * +l.sale_price, 0)
       const revenueDelta = revenuePrev > 0
         ? ((revenueThis - revenuePrev) / revenuePrev) * 100
         : null
 
-      const ordersThisMonth = [...new Set(
-        ordersRaw.filter(o => isSameMonth(o.date, thisYear, thisMonth)).map(o => o.id)
-      )].length
-
+      // Active customers = distinct customers with at least 1 line in last 60 days
       const activeCustomerIds = new Set(
-        ordersRaw
-          .filter(o => new Date(o.date) >= cutoff60)
-          .map(o => o.customer_id)
+        (recentLinesForActivity ?? [])
+          .filter(l => new Date(l.date) >= cutoff60)
+          .map(l => l.customer_id)
       )
 
+      // Avg margin on this month's lines
       const avgMarginThis = (() => {
-        const valid = thisMonthLines.filter(l => l.purchase_price > 0)
+        const valid = thisLines.filter(l => +l.purchase_price > 0)
         if (!valid.length) return null
         const total = valid.reduce(
-          (s, l) => s + ((l.sale_price - l.purchase_price) / l.purchase_price) * 100, 0
+          (s, l) => s + (((+l.sale_price - +l.purchase_price) / +l.purchase_price) * 100), 0
         )
         return (total / valid.length).toFixed(1)
       })()
+
+      // "Ordini questo mese" = count of order lines this month
+      const linesThisMonth = thisLines.length
 
       setKpis({
         revenueThis,
         revenueDelta,
         activeCustomers: activeCustomerIds.size,
-        avgMargin: avgMarginThis,
-        ordersThisMonth,
+        avgMargin:       avgMarginThis,
+        linesThisMonth,
       })
 
     } catch (e) {
@@ -239,7 +241,7 @@ export default function Dashboard() {
           <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
         ) : (
           <>
-            {/* ── Revenue chart ──────────────────────────────── */}
+            {/* ── Revenue chart ──────────────────────────── */}
             <section className="bg-white rounded-xl border border-gray-100 p-4">
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
                 Fatturato ultimi 6 mesi
@@ -247,82 +249,49 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={v => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
-                    width={42}
-                  />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                    tickFormatter={v => `€${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} width={42} />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f1f5f9', radius: 4 }} />
                   <Bar dataKey="revenue" fill="#1e2a4a" radius={[5, 5, 0, 0]} maxBarSize={48} />
                 </BarChart>
               </ResponsiveContainer>
             </section>
 
-            {/* ── KPI cards ──────────────────────────────────── */}
+            {/* ── KPI cards ──────────────────────────────── */}
             {kpis && (
               <section className="grid grid-cols-2 gap-3">
                 <KpiCard
                   label="Fatturato mese"
-                  icon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  }
+                  icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                   value={formatCurrency(kpis.revenueThis)}
-                  sub={
-                    kpis.revenueDelta !== null
-                      ? `${kpis.revenueDelta >= 0 ? '+' : ''}${kpis.revenueDelta.toFixed(1)}% vs mese scorso`
-                      : 'Nessun dato mese scorso'
-                  }
-                  subPositive={
-                    kpis.revenueDelta !== null ? kpis.revenueDelta >= 0 : undefined
-                  }
+                  sub={kpis.revenueDelta !== null
+                    ? `${kpis.revenueDelta >= 0 ? '+' : ''}${kpis.revenueDelta.toFixed(1)}% vs mese scorso`
+                    : 'Nessun dato mese scorso'}
+                  subPositive={kpis.revenueDelta !== null ? kpis.revenueDelta >= 0 : undefined}
                 />
-
                 <KpiCard
                   label="Clienti attivi"
-                  icon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  }
+                  icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                   value={kpis.activeCustomers}
                   sub={`ordini negli ultimi ${INACTIVE_DAYS} giorni`}
                 />
-
                 <KpiCard
                   label="Margine medio"
-                  icon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  }
+                  icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}
                   value={kpis.avgMargin !== null ? `${kpis.avgMargin}%` : '—'}
                   sub="sulle righe di questo mese"
                 />
-
                 <KpiCard
-                  label="Ordini mese"
-                  icon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                  }
-                  value={kpis.ordersThisMonth}
-                  sub="ordini registrati questo mese"
+                  label="Righe questo mese"
+                  icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>}
+                  value={kpis.linesThisMonth}
+                  sub="righe d'ordine registrate"
                 />
               </section>
             )}
 
-            {/* ── Inactive customers ─────────────────────────── */}
+            {/* ── Inactive customers ─────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
@@ -330,7 +299,6 @@ export default function Dashboard() {
                   Clienti senza ordini da +{INACTIVE_DAYS} giorni
                 </h2>
               </div>
-
               {inactiveCustomers.length === 0 ? (
                 <div className="bg-white rounded-xl p-5 text-center text-gray-400 text-sm border border-gray-100">
                   Tutti i clienti hanno ordinato di recente
@@ -338,11 +306,8 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-2">
                   {inactiveCustomers.map(customer => (
-                    <button
-                      key={customer.id}
-                      onClick={() => navigate(`/customers/${customer.id}`)}
-                      className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]"
-                    >
+                    <button key={customer.id} onClick={() => navigate(`/customers/${customer.id}`)}
+                      className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold text-navy-800 truncate">{customer.company_name}</p>
@@ -365,7 +330,7 @@ export default function Dashboard() {
               )}
             </section>
 
-            {/* ── Recent notes ───────────────────────────────── */}
+            {/* ── Recent notes ───────────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-navy-400 flex-shrink-0" />
@@ -373,7 +338,6 @@ export default function Dashboard() {
                   Ultime note aggiunte
                 </h2>
               </div>
-
               {recentNotes.length === 0 ? (
                 <div className="bg-white rounded-xl p-5 text-center text-gray-400 text-sm border border-gray-100">
                   Nessuna nota presente
@@ -381,18 +345,11 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-2">
                   {recentNotes.map(note => (
-                    <button
-                      key={note.id}
-                      onClick={() => navigate(`/customers/${note.customer_id}`)}
-                      className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]"
-                    >
+                    <button key={note.id} onClick={() => navigate(`/customers/${note.customer_id}`)}
+                      className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]">
                       <div className="flex items-start justify-between gap-3 mb-1.5">
-                        <p className="text-xs font-semibold text-navy-700">
-                          {note.customers?.company_name}
-                        </p>
-                        <p className="text-xs text-gray-400 flex-shrink-0">
-                          {formatDate(note.created_at)}
-                        </p>
+                        <p className="text-xs font-semibold text-navy-700">{note.customers?.company_name}</p>
+                        <p className="text-xs text-gray-400 flex-shrink-0">{formatDate(note.created_at)}</p>
                       </div>
                       <p className="text-sm text-gray-600 line-clamp-2">{note.text}</p>
                     </button>
