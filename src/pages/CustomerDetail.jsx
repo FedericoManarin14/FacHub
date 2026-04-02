@@ -1,6 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -72,29 +71,6 @@ function marginColor(m) {
   return 'text-red-500'
 }
 
-/* ── parse Excel/CSV date values ─────────────────────────── */
-function parseXlsxDate(raw) {
-  if (!raw) return ''
-  // Already a JS Date
-  if (raw instanceof Date) return raw.toISOString().split('T')[0]
-  // Numeric serial (Excel date)
-  if (typeof raw === 'number') {
-    const d = XLSX.SSF.parse_date_code(raw)
-    if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
-  }
-  // String — try common formats
-  const s = String(raw).trim()
-  // ISO
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  // DD/MM/YYYY or DD-MM-YYYY
-  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
-  if (m) {
-    const y = m[3].length === 2 ? `20${m[3]}` : m[3]
-    return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
-  }
-  return s
-}
-
 /* ══════════════════════════════════════════════════════════ */
 export default function CustomerDetail() {
   const { id } = useParams()
@@ -112,13 +88,6 @@ export default function CustomerDetail() {
   const [addForm,       setAddForm]       = useState(emptyLine)
   const [addError,      setAddError]      = useState('')
   const [savingAdd,     setSavingAdd]     = useState(false)
-
-  /* excel import modal */
-  const fileInputRef                        = useRef(null)
-  const [importModalOpen, setImportModalOpen] = useState(false)
-  const [importRows,      setImportRows]      = useState([])   // parsed preview rows
-  const [importError,     setImportError]     = useState('')
-  const [savingImport,    setSavingImport]     = useState(false)
 
   /* note modal */
   const [noteModalOpen, setNoteModalOpen] = useState(false)
@@ -190,8 +159,6 @@ export default function CustomerDetail() {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   })()
 
-  const totalRevenue = orderLines.reduce((s, l) => s + +l.quantity * +l.sale_price, 0)
-
   /* ── status ─────────────────────────────────────────────── */
   const handleStatusChange = async (newStatus) => {
     setStatusSaving(true)
@@ -240,104 +207,6 @@ export default function CustomerDetail() {
     setSavingAdd(false)
     setAddModalOpen(false)
     setAddForm(emptyLine())
-    fetchData()
-  }
-
-  /* ── excel import ────────────────────────────────────────── */
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setImportError('')
-
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target.result, { type: 'binary', cellDates: true })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        // Get raw array of arrays
-        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-        if (!raw || raw.length < 2) {
-          setImportError('Il file è vuoto o ha meno di 2 righe.')
-          return
-        }
-
-        // Detect if first row is a header
-        const firstRow = raw[0].map(c => String(c).toLowerCase().trim())
-        const HEADERS = ['product_name', 'quantity', 'date', 'sale_price', 'purchase_price']
-        const hasHeader = HEADERS.some(h => firstRow.includes(h))
-
-        // Build column index map
-        let colMap = {}
-        if (hasHeader) {
-          HEADERS.forEach(h => { colMap[h] = firstRow.indexOf(h) })
-        } else {
-          // Positional: product_name, quantity, date, sale_price, purchase_price
-          HEADERS.forEach((h, i) => { colMap[h] = i })
-        }
-
-        const dataRows = hasHeader ? raw.slice(1) : raw
-
-        const parsed = []
-        const errs = []
-        dataRows.forEach((row, idx) => {
-          if (!row || row.every(c => c === '' || c === null || c === undefined)) return
-          const product_name   = String(row[colMap.product_name] ?? '').trim()
-          const quantity       = parseFloat(row[colMap.quantity])
-          const date           = parseXlsxDate(row[colMap.date])
-          const sale_price     = parseFloat(row[colMap.sale_price])
-          const purchase_price = parseFloat(row[colMap.purchase_price])
-
-          if (!product_name)        { errs.push(`Riga ${idx + (hasHeader ? 2 : 1)}: nome prodotto mancante`); return }
-          if (isNaN(quantity))      { errs.push(`Riga ${idx + (hasHeader ? 2 : 1)}: quantità non valida`); return }
-          if (!date)                { errs.push(`Riga ${idx + (hasHeader ? 2 : 1)}: data non valida`); return }
-          if (isNaN(sale_price))    { errs.push(`Riga ${idx + (hasHeader ? 2 : 1)}: prezzo vendita non valido`); return }
-          if (isNaN(purchase_price)){ errs.push(`Riga ${idx + (hasHeader ? 2 : 1)}: prezzo acquisto non valido`); return }
-
-          parsed.push({ product_name, quantity, date, sale_price, purchase_price })
-        })
-
-        if (errs.length > 0) {
-          setImportError(errs.slice(0, 5).join('\n') + (errs.length > 5 ? `\n...e altri ${errs.length - 5} errori` : ''))
-        }
-        if (parsed.length === 0) {
-          setImportError('Nessuna riga valida trovata.')
-          return
-        }
-        setImportRows(parsed)
-        setImportModalOpen(true)
-      } catch (err) {
-        setImportError('Impossibile leggere il file. Verifica il formato.')
-        console.error(err)
-      } finally {
-        // Reset input so same file can be re-selected
-        e.target.value = ''
-      }
-    }
-    reader.readAsBinaryString(file)
-  }
-
-  const handleConfirmImport = async () => {
-    setSavingImport(true)
-    const rows = importRows.map(r => ({
-      customer_id:    id,
-      product_id:     null,
-      product_name:   r.product_name,
-      date:           r.date,
-      quantity:       r.quantity,
-      sale_price:     r.sale_price,
-      purchase_price: r.purchase_price,
-      notes:          null,
-    }))
-
-    const { error } = await supabase.from('order_lines').insert(rows)
-    if (error) {
-      setImportError('Errore durante l\'importazione. Riprova.')
-      setSavingImport(false)
-      return
-    }
-    setSavingImport(false)
-    setImportModalOpen(false)
-    setImportRows([])
     fetchData()
   }
 
@@ -469,34 +338,15 @@ export default function CustomerDetail() {
               Ordini
               <span className="ml-2 text-xs font-normal text-gray-400">({orderLines.length} righe)</span>
             </h2>
-            <div className="flex items-center gap-2">
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              <button
-                onClick={() => { setImportError(''); fileInputRef.current?.click() }}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-navy-800 transition-colors border border-gray-200 hover:border-navy-300 px-2.5 py-1.5 rounded-lg"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-                Importa Excel
-              </button>
-              <button
-                onClick={() => { setAddModalOpen(true); setAddError(''); setAddForm({ ...emptyLine(), date: today() }) }}
-                className="flex items-center gap-1.5 text-sm font-semibold text-navy-700 hover:text-navy-900 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                Aggiungi riga
-              </button>
-            </div>
+            <button
+              onClick={() => { setAddModalOpen(true); setAddError(''); setAddForm({ ...emptyLine(), date: today() }) }}
+              className="flex items-center gap-1.5 text-sm font-semibold text-navy-700 hover:text-navy-900 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Aggiungi riga
+            </button>
           </div>
 
           {orderLines.length === 0 ? (
@@ -554,16 +404,6 @@ export default function CustomerDetail() {
                     </>
                   ))}
 
-                  {/* Grand total row */}
-                  <tr className="bg-navy-800 border-t-2 border-navy-700">
-                    <td colSpan={5} className="px-3 py-2.5 text-xs font-semibold text-white/70 uppercase tracking-wide">
-                      Totale fatturato
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-sm font-bold text-white tabular-nums">
-                      {formatCurrency(totalRevenue)}
-                    </td>
-                    <td />
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -734,52 +574,6 @@ export default function CustomerDetail() {
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* ═══ Import preview modal ════════════════════════════ */}
-      <Modal isOpen={importModalOpen} onClose={() => { setImportModalOpen(false); setImportRows([]) }} title={`Anteprima importazione (${importRows.length} righe)`}>
-        <div className="space-y-4">
-          {importError && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl text-xs whitespace-pre-line">{importError}</div>
-          )}
-
-          <div className="overflow-x-auto rounded-xl border border-gray-200">
-            <table className="w-full text-xs min-w-[480px]">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500">Prodotto</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-500">Qtà</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500">Data</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-500">P. Vendita</th>
-                  <th className="text-right px-3 py-2 font-semibold text-gray-500">P. Acquisto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importRows.map((row, i) => (
-                  <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                    <td className="px-3 py-2 text-gray-700 font-medium">{row.product_name}</td>
-                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{row.quantity}</td>
-                    <td className="px-3 py-2 text-gray-600">{row.date}</td>
-                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{formatCurrency(row.sale_price)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{formatCurrency(row.purchase_price)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex gap-3">
-            <button type="button" onClick={() => { setImportModalOpen(false); setImportRows([]) }}
-              className="flex-1 py-3 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors">
-              Annulla
-            </button>
-            <button onClick={handleConfirmImport} disabled={savingImport}
-              className="flex-1 py-3 bg-navy-800 text-white rounded-xl font-semibold hover:bg-navy-900 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-              {savingImport && <Spinner size="sm" />}
-              {savingImport ? 'Importazione...' : `Importa ${importRows.length} righe`}
-            </button>
-          </div>
-        </div>
       </Modal>
 
       {/* ═══ Note modal ══════════════════════════════════════ */}
