@@ -8,8 +8,13 @@ import Spinner from '../components/Spinner'
 const EMPTY_FORM = { name: '', category: 'glues', type: '', purchase_cost_kg: '', base_margin: '' }
 
 function formatCurrency(val) {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val ?? 0)
+  const n = Number(val)
+  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(
+    Number.isFinite(n) ? n : 0
+  )
 }
+
+function safeName(p) { return p?.name ?? '' }
 
 const fieldCls = 'w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white'
 
@@ -221,7 +226,7 @@ export default function Products() {
 
     const costs = await saveCosts(data.id, form.purchase_cost_kg, formCosts)
 
-    setProducts(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+    setProducts(prev => [...prev, data].sort((a, b) => safeName(a).localeCompare(safeName(b))))
     setCostsMap(m => ({ ...m, [data.id]: costs }))
     const base = costs.find(c => c.label === 'Base') ?? costs[0]
     if (base) setSelectedCostMap(m => ({ ...m, [data.id]: base.id }))
@@ -259,7 +264,7 @@ export default function Products() {
 
     const costs = await saveCosts(editTarget.id, editForm.purchase_cost_kg, editCosts)
 
-    setProducts(prev => prev.map(p => p.id === editTarget.id ? data : p).sort((a, b) => a.name.localeCompare(b.name)))
+    setProducts(prev => prev.map(p => p.id === editTarget.id ? data : p).sort((a, b) => safeName(a).localeCompare(safeName(b))))
     setCostsMap(m => ({ ...m, [editTarget.id]: costs }))
     const base = costs.find(c => c.label === 'Base') ?? costs[0]
     if (base) setSelectedCostMap(m => ({ ...m, [editTarget.id]: base.id }))
@@ -280,6 +285,12 @@ export default function Products() {
     glues:     products.filter(p => p.category === 'glues').length,
     abrasives: products.filter(p => p.category === 'abrasives').length,
   }
+
+  const lowerSearch = search.toLowerCase()
+  const filtered = products.filter(p =>
+    p.category === activeTab &&
+    safeName(p).toLowerCase().includes(lowerSearch)
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
