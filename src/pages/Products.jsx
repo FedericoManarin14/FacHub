@@ -149,32 +149,37 @@ export default function Products() {
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
+    setLoading(true)
+    setError('')
     try {
-      setLoading(true)
-      const [prodsRes, costsRes] = await Promise.all([
-        supabase.from('products').select('*').order('name'),
-        supabase.from('product_costs').select('*').order('created_at'),
-      ])
+      // ── 1. Fetch products (critical — show error if this fails) ──────
+      const prodsRes = await supabase.from('products').select('*').order('name')
       if (prodsRes.error) throw prodsRes.error
-
-      const prods = prodsRes.data ?? []
+      const prods = Array.isArray(prodsRes.data) ? prodsRes.data : []
       setProducts(prods)
 
-      // Build costsMap
-      const cMap = {}
-      for (const c of (costsRes.data ?? [])) {
-        if (!cMap[c.product_id]) cMap[c.product_id] = []
-        cMap[c.product_id].push(c)
-      }
-      setCostsMap(cMap)
+      // ── 2. Fetch costs (non-critical — ignore if table missing / RLS) ──
+      let cMap = {}
+      try {
+        const costsRes = await supabase.from('product_costs').select('*').order('created_at')
+        if (!costsRes.error && Array.isArray(costsRes.data)) {
+          for (const c of costsRes.data) {
+            if (!cMap[c.product_id]) cMap[c.product_id] = []
+            cMap[c.product_id].push(c)
+          }
+        }
+      } catch (_) { /* product_costs table may not exist yet — silently skip */ }
 
-      // Initialise selectedCostMap → default to "Base" cost
+      // ── 3. Derive selectedCostMap (default to "Base") ──────────────
       const selMap = {}
       for (const p of prods) {
-        const costs = cMap[p.id] ?? []
+        const costs = Array.isArray(cMap[p.id]) ? cMap[p.id] : []
         const base  = costs.find(c => c.label === 'Base') ?? costs[0]
         if (base) selMap[p.id] = base.id
       }
+
+      // ── 4. Commit all derived state in one batch before setting loading=false
+      setCostsMap(cMap)
       setSelectedCostMap(selMap)
     } catch (e) {
       setError('Errore nel caricamento dei prodotti.')
@@ -186,15 +191,20 @@ export default function Products() {
 
   /* ── helper: replace all product_costs then return new list ── */
   async function saveCosts(productId, baseCostKg, extraCosts) {
-    await supabase.from('product_costs').delete().eq('product_id', productId)
-    const rows = [
-      { product_id: productId, label: 'Base', cost_per_kg: parseFloat(baseCostKg) },
-      ...extraCosts
-        .filter(c => c.label.trim() && c.cost_per_kg !== '' && !isNaN(c.cost_per_kg))
-        .map(c => ({ product_id: productId, label: c.label.trim(), cost_per_kg: parseFloat(c.cost_per_kg) })),
-    ]
-    const { data } = await supabase.from('product_costs').insert(rows).select()
-    return data ?? []
+    try {
+      await supabase.from('product_costs').delete().eq('product_id', productId)
+      const safeExtra = Array.isArray(extraCosts) ? extraCosts : []
+      const rows = [
+        { product_id: productId, label: 'Base', cost_per_kg: parseFloat(baseCostKg) },
+        ...safeExtra
+          .filter(c => c && String(c.label ?? '').trim() && c.cost_per_kg !== '' && !isNaN(c.cost_per_kg))
+          .map(c => ({ product_id: productId, label: String(c.label).trim(), cost_per_kg: parseFloat(c.cost_per_kg) })),
+      ]
+      const { data } = await supabase.from('product_costs').insert(rows).select()
+      return Array.isArray(data) ? data : []
+    } catch (_) {
+      return []
+    }
   }
 
   /* ── add product ── */
@@ -227,11 +237,11 @@ export default function Products() {
       purchase_cost_kg: String(product.purchase_cost_kg), base_margin: String(product.base_margin),
     })
     // Pre-fill extra costs (everything except "Base")
-    const existing = costsMap[product.id] ?? []
+    const existing = Array.isArray(costsMap[product.id]) ? costsMap[product.id] : []
     setEditCosts(
       existing
-        .filter(c => c.label !== 'Base')
-        .map(c => ({ key: nextKey(), label: c.label, cost_per_kg: String(c.cost_per_kg) }))
+        .filter(c => c && c.label !== 'Base')
+        .map(c => ({ key: nextKey(), label: c.label ?? '', cost_per_kg: String(c.cost_per_kg ?? '') }))
     )
     setEditError('')
   }
@@ -324,11 +334,16 @@ export default function Products() {
         ) : (
           <div className="space-y-2">
             {filtered.map(product => {
-              const costs    = costsMap[product.id] ?? []
-              const selId    = selectedCostMap[product.id]
-              const selCost  = costs.find(c => c.id === selId) ?? costs.find(c => c.label === 'Base') ?? costs[0]
-              const dispCost = selCost?.cost_per_kg ?? product.purchase_cost_kg
-              const salePrice = dispCost * (1 + product.base_margin / 100)
+              const costs     = Array.isArray(costsMap[product.id]) ? costsMap[product.id] : []
+              const selId     = selectedCostMap[product.id]
+              const selCost   = costs.find(c => c.id === selId)
+                             ?? costs.find(c => c.label === 'Base')
+                             ?? costs[0]
+              const dispCost  = (selCost && selCost.cost_per_kg != null)
+                              ? Number(selCost.cost_per_kg)
+                              : Number(product.purchase_cost_kg ?? 0)
+              const margin    = Number(product.base_margin ?? 0)
+              const salePrice = dispCost * (1 + margin / 100)
 
               return (
                 <div key={product.id} className="flex items-stretch gap-2">
