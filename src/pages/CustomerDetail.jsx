@@ -117,6 +117,8 @@ export default function CustomerDetail() {
   const [addError,        setAddError]        = useState('')
   const [savingAdd,       setSavingAdd]       = useState(false)
   const [addOfferHint,    setAddOfferHint]    = useState(false)
+  const [addProductCosts, setAddProductCosts] = useState([])   // product_costs for selected product
+  const [addCostId,       setAddCostId]       = useState('')   // selected cost id in dropdown
 
   /* ── edit order line ────────────────────────────────────── */
   const [editLineTarget,  setEditLineTarget]  = useState(null)
@@ -230,29 +232,46 @@ export default function CustomerDetail() {
   const handleAddFormProductChange = async (productId) => {
     const p = products.find(pr => pr.id === productId)
     setAddOfferHint(false)
+    setAddCostId('')
+    setAddProductCosts([])
+
+    // Base price pre-fill (sale from margin, purchase cleared until cost selected)
     setAddForm(f => ({
       ...f,
       product_id:     productId,
       product_name:   p ? p.name : f.product_name,
-      purchase_price: p ? String(p.purchase_cost_kg) : f.purchase_price,
+      purchase_price: '',   // will be filled by cost dropdown
       sale_price:     p ? String(parseFloat((p.purchase_cost_kg * (1 + p.base_margin / 100)).toFixed(4))) : f.sale_price,
     }))
 
-    if (productId && p) {
-      const { data } = await supabase
-        .from('offers')
-        .select('proposed_price')
-        .eq('customer_id', id)
-        .eq('product_id', productId)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+    if (!productId || !p) return
 
-      if (data?.proposed_price) {
-        setAddForm(f => ({ ...f, sale_price: String(data.proposed_price) }))
-        setAddOfferHint(true)
-      }
+    // Fetch costs and offer hint in parallel
+    const [costsRes, offerRes] = await Promise.all([
+      supabase.from('product_costs').select('*').eq('product_id', productId).order('created_at'),
+      supabase.from('offers').select('proposed_price').eq('customer_id', id).eq('product_id', productId)
+        .order('date', { ascending: false }).limit(1).maybeSingle(),
+    ])
+
+    const costs = costsRes.data ?? []
+    setAddProductCosts(costs)
+
+    // If no costs, fall back to product base cost
+    if (costs.length === 0) {
+      setAddForm(f => ({ ...f, purchase_price: String(p.purchase_cost_kg) }))
     }
+
+    // Offer hint for sale price
+    if (offerRes.data?.proposed_price) {
+      setAddForm(f => ({ ...f, sale_price: String(offerRes.data.proposed_price) }))
+      setAddOfferHint(true)
+    }
+  }
+
+  const handleAddCostSelect = (costId) => {
+    setAddCostId(costId)
+    const cost = addProductCosts.find(c => c.id === costId)
+    if (cost) setAddForm(f => ({ ...f, purchase_price: String(cost.cost_per_kg) }))
   }
 
   const handleAddRow = async (e) => {
@@ -571,7 +590,7 @@ export default function CustomerDetail() {
               <span className="ml-2 text-xs font-normal text-gray-400">({orderLines.length} righe)</span>
             </h2>
             <button
-              onClick={() => { setAddModalOpen(true); setAddError(''); setAddForm(emptyLine()); setAddOfferHint(false) }}
+              onClick={() => { setAddModalOpen(true); setAddError(''); setAddForm(emptyLine()); setAddOfferHint(false); setAddProductCosts([]); setAddCostId('') }}
               className="flex items-center gap-1.5 text-sm font-semibold text-navy-700 hover:text-navy-900 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -780,7 +799,7 @@ export default function CustomerDetail() {
       <BottomNav />
 
       {/* ═══ Add row modal ═══════════════════════════════════ */}
-      <Modal isOpen={addModalOpen} onClose={() => { setAddModalOpen(false); setAddOfferHint(false) }} title="Aggiungi riga d'ordine">
+      <Modal isOpen={addModalOpen} onClose={() => { setAddModalOpen(false); setAddOfferHint(false); setAddProductCosts([]); setAddCostId('') }} title="Aggiungi riga d'ordine">
         <form onSubmit={handleAddRow} className="space-y-4">
           {addError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{addError}</div>}
 
@@ -808,6 +827,21 @@ export default function CustomerDetail() {
               className={fieldCls} />
           </div>
 
+          {/* Cost dropdown — only shown when the product has product_costs entries */}
+          {addProductCosts.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Costo acquisto</label>
+              <select value={addCostId} onChange={e => handleAddCostSelect(e.target.value)} className={fieldCls}>
+                <option value="">-- Seleziona fornitore --</option>
+                {addProductCosts.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.label} – {new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(c.cost_per_kg)}/kg
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Qtà (kg)</label>
@@ -827,7 +861,7 @@ export default function CustomerDetail() {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">P. acquisto €/kg</label>
               <input type="number" value={addForm.purchase_price} min="0" step="0.0001" required
-                onChange={e => setAddForm(f => ({ ...f, purchase_price: e.target.value }))}
+                onChange={e => { setAddForm(f => ({ ...f, purchase_price: e.target.value })); setAddCostId('') }}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-navy-800 text-sm focus:outline-none focus:ring-2 focus:ring-navy-800 bg-white" />
             </div>
           </div>
@@ -849,7 +883,7 @@ export default function CustomerDetail() {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => { setAddModalOpen(false); setAddOfferHint(false) }}
+            <button type="button" onClick={() => { setAddModalOpen(false); setAddOfferHint(false); setAddProductCosts([]); setAddCostId('') }}
               className="flex-1 py-3 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors">
               Annulla
             </button>

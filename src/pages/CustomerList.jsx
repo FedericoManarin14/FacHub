@@ -73,6 +73,12 @@ export default function CustomerList() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Edit customer
+  const [editTarget,  setEditTarget]  = useState(null)
+  const [editForm,    setEditForm]    = useState(EMPTY_FORM)
+  const [editError,   setEditError]   = useState('')
+  const [savingEdit,  setSavingEdit]  = useState(false)
+
   // Excel import
   const fileInputRef                                  = useRef(null)
   const [importModalOpen,   setImportModalOpen]   = useState(false)
@@ -144,6 +150,37 @@ export default function CustomerList() {
     setCustomers(prev => prev.filter(c => c.id !== deleteTarget.id))
     setDeleteTarget(null)
     setDeleting(false)
+  }
+
+  const openEdit = (customer) => {
+    setEditTarget(customer)
+    setEditForm({
+      company_name: customer.company_name,
+      sector:       customer.sector,
+      description:  customer.description || '',
+      email:        customer.email || '',
+      phone:        customer.phone || '',
+      offer_status: customer.offer_status,
+    })
+    setEditError('')
+  }
+
+  const handleEdit = async (e) => {
+    e.preventDefault()
+    if (!editForm.company_name.trim()) { setEditError('Il nome azienda è obbligatorio.'); return }
+    setSavingEdit(true); setEditError('')
+    const { data, error } = await supabase
+      .from('customers')
+      .update(editForm)
+      .eq('id', editTarget.id)
+      .select()
+      .single()
+    if (error) { setEditError('Errore nel salvataggio. Riprova.'); setSavingEdit(false); return }
+    setCustomers(prev =>
+      prev.map(c => c.id === editTarget.id ? data : c)
+          .sort((a, b) => a.company_name.localeCompare(b.company_name))
+    )
+    setEditTarget(null); setSavingEdit(false)
   }
 
   /* ── Excel import ──────────────────────────────────────── */
@@ -381,6 +418,15 @@ export default function CustomerList() {
                   </div>
                 </button>
                 <button
+                  onClick={() => openEdit(customer)}
+                  className="flex-shrink-0 flex items-center justify-center w-10 bg-white border border-gray-100 rounded-xl text-gray-300 hover:text-navy-600 hover:border-navy-200 transition-colors"
+                  aria-label="Modifica cliente"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
                   onClick={() => setDeleteTarget(customer)}
                   className="flex-shrink-0 flex items-center justify-center w-10 bg-white border border-gray-100 rounded-xl text-gray-300 hover:text-red-500 hover:border-red-200 transition-colors"
                   aria-label="Elimina cliente"
@@ -582,6 +628,73 @@ export default function CustomerList() {
           </div>
         </Modal>
       )}
+
+      {/* Edit Customer Modal */}
+      <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Modifica cliente">
+        <form onSubmit={handleEdit} className="space-y-4">
+          {editError && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{editError}</div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Nome azienda *</label>
+            <input type="text" value={editForm.company_name}
+              onChange={e => setEditForm(f => ({ ...f, company_name: e.target.value }))} required
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base"
+              placeholder="Es. Falegnameria Rossi SRL" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Settore *</label>
+            <select value={editForm.sector} onChange={e => setEditForm(f => ({ ...f, sector: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white">
+              <option value="glues">Colle</option>
+              <option value="abrasives">Abrasivi</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Descrizione</label>
+            <textarea value={editForm.description}
+              onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+              rows={2}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base resize-none"
+              placeholder="Breve descrizione dell'azienda" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+            <input type="email" value={editForm.email}
+              onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base"
+              placeholder="info@azienda.it" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Telefono</label>
+            <input type="tel" value={editForm.phone}
+              onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base"
+              placeholder="+39 02 1234567" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Stato cliente</label>
+            <select value={editForm.offer_status}
+              onChange={e => setEditForm(f => ({ ...f, offer_status: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white">
+              <option value="ongoing">Attivo</option>
+              <option value="pending">In attesa</option>
+              <option value="expired">Rifiutato</option>
+            </select>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={() => setEditTarget(null)}
+              className="flex-1 py-3 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors">
+              Annulla
+            </button>
+            <button type="submit" disabled={savingEdit}
+              className="flex-1 py-3 bg-navy-800 text-white rounded-xl font-semibold hover:bg-navy-900 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+              {savingEdit && <Spinner size="sm" />}
+              {savingEdit ? 'Salvataggio...' : 'Salva modifiche'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
