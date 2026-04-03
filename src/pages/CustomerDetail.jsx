@@ -234,34 +234,39 @@ export default function CustomerDetail() {
     setAddOfferHint(false)
     setAddCostId('')
     setAddProductCosts([])
-
-    // Base price pre-fill (sale from margin, purchase cleared until cost selected)
     setAddForm(f => ({
       ...f,
       product_id:     productId,
       product_name:   p ? p.name : f.product_name,
-      purchase_price: '',   // will be filled by cost dropdown
+      purchase_price: p ? String(p.purchase_cost_kg) : '',
       sale_price:     p ? String(parseFloat((p.purchase_cost_kg * (1 + p.base_margin / 100)).toFixed(4))) : f.sale_price,
     }))
 
     if (!productId || !p) return
 
-    // Fetch costs and offer hint in parallel
+    // Fetch product_costs and offer hint in parallel
     const [costsRes, offerRes] = await Promise.all([
       supabase.from('product_costs').select('*').eq('product_id', productId).order('created_at'),
-      supabase.from('offers').select('proposed_price').eq('customer_id', id).eq('product_id', productId)
-        .order('date', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('offers').select('proposed_price').eq('customer_id', id)
+        .eq('product_id', productId).order('date', { ascending: false }).limit(1).maybeSingle(),
     ])
 
     const costs = costsRes.data ?? []
     setAddProductCosts(costs)
 
-    // If no costs, fall back to product base cost
-    if (costs.length === 0) {
-      setAddForm(f => ({ ...f, purchase_price: String(p.purchase_cost_kg) }))
+    if (costs.length === 1) {
+      // Single cost → auto-fill directly, no dropdown
+      setAddCostId(costs[0].id)
+      setAddForm(f => ({ ...f, purchase_price: String(costs[0].cost_per_kg) }))
+    } else if (costs.length > 1) {
+      // Multiple costs → default to "Base" entry
+      const base = costs.find(c => c.label === 'Base') ?? costs[0]
+      setAddCostId(base.id)
+      setAddForm(f => ({ ...f, purchase_price: String(base.cost_per_kg) }))
     }
+    // length === 0 → falls back to product.purchase_cost_kg set above
 
-    // Offer hint for sale price
+    // Offer hint overrides sale price
     if (offerRes.data?.proposed_price) {
       setAddForm(f => ({ ...f, sale_price: String(offerRes.data.proposed_price) }))
       setAddOfferHint(true)
@@ -827,12 +832,11 @@ export default function CustomerDetail() {
               className={fieldCls} />
           </div>
 
-          {/* Cost dropdown — only shown when the product has product_costs entries */}
-          {addProductCosts.length > 0 && (
+          {/* Cost dropdown — shown only when 2+ product_costs exist (single → auto-filled silently) */}
+          {addProductCosts.length > 1 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Costo acquisto</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Fornitore / Costo</label>
               <select value={addCostId} onChange={e => handleAddCostSelect(e.target.value)} className={fieldCls}>
-                <option value="">-- Seleziona fornitore --</option>
                 {addProductCosts.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.label} – {new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(c.cost_per_kg)}/kg
