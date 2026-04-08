@@ -160,8 +160,8 @@ export default function Dashboard() {
         const ds = lastDate ? daysSince(lastDate) : Infinity
         const overdue = ds === Infinity ? interval.avg_days : ds - interval.avg_days
         let status
-        if (ds === Infinity || ds >= interval.avg_days) status = 'ritardo'
-        else if (ds >= interval.avg_days * 0.8) status = 'attesa'
+        if (ds === Infinity || ds > interval.avg_days + 30) status = 'ritardo'
+        else if (ds > interval.avg_days) status = 'attesa'
         else continue
         items.push({ customer_id: interval.customer_id, product_name: interval.product_name, avg_days: interval.avg_days, lastDate: lastDate ?? null, daysSince: ds === Infinity ? null : ds, overdue, status, customer })
       }

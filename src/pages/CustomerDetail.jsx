@@ -68,9 +68,9 @@ function emptyOffer() {
 /* ── interval status ─────────────────────────────────────── */
 function intervalStatus(daysSince, avgDays) {
   if (!avgDays || avgDays <= 0) return null
-  if (daysSince >= avgDays) return 'ritardo'
-  if (daysSince >= avgDays * 0.8) return 'attesa'
-  return 'regolare'
+  if (daysSince <= avgDays) return 'regolare'
+  if (daysSince <= avgDays + 30) return 'attesa'
+  return 'ritardo'
 }
 
 /* ── margin color ────────────────────────────────────────── */
