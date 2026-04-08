@@ -78,12 +78,12 @@ function ChartTooltip({ active, payload, label }) {
 
 /* ════════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const [chartData,         setChartData]         = useState([])
-  const [kpis,              setKpis]              = useState(null)
-  const [inactiveCustomers, setInactiveCustomers] = useState([])
-  const [recentNotes,       setRecentNotes]       = useState([])
-  const [loading,           setLoading]           = useState(true)
-  const [error,             setError]             = useState('')
+  const [chartData,    setChartData]    = useState([])
+  const [kpis,         setKpis]         = useState(null)
+  const [monitorItems, setMonitorItems] = useState([])
+  const [recentNotes,  setRecentNotes]  = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState('')
 
   const navigate = useNavigate()
 
@@ -111,18 +111,20 @@ export default function Dashboard() {
       cutoff60.setDate(cutoff60.getDate() - INACTIVE_DAYS)
 
       const [
-        { data: customers,    error: custErr  },
-        { data: allLines,     error: linesErr },
-        { data: activityLines,error: actErr   },
-        { data: notes,        error: notesErr },
+        { data: customers,     error: custErr   },
+        { data: allLines,      error: linesErr  },
+        { data: activityLines, error: actErr    },
+        { data: notes,         error: notesErr  },
+        { data: intervals,     error: intErr    },
       ] = await Promise.all([
         supabase.from('customers').select('id, company_name, sector, offer_status').order('company_name'),
         supabase.from('order_lines').select('customer_id, date, sale_price, purchase_price, quantity').gte('date', windowStartStr),
-        supabase.from('order_lines').select('customer_id, date').order('date', { ascending: false }),
+        supabase.from('order_lines').select('customer_id, product_name, date').order('date', { ascending: false }),
         supabase.from('customer_notes')
           .select('id, text, created_at, customer_id, customers(company_name)')
           .order('created_at', { ascending: false })
           .limit(5),
+        supabase.from('customer_product_intervals').select('customer_id, product_name, avg_days'),
       ])
 
       if (custErr)  throw custErr
@@ -130,17 +132,47 @@ export default function Dashboard() {
       if (actErr)   throw actErr
       if (notesErr) throw notesErr
 
-      // Last order per customer
+      // Last order per customer (for KPI active count)
       const lastOrderMap = {}
       for (const l of (activityLines ?? [])) {
         if (!lastOrderMap[l.customer_id]) lastOrderMap[l.customer_id] = l.date
       }
 
-      const inactive = (customers ?? [])
-        .filter(c => { const last = lastOrderMap[c.id]; return !last || new Date(last) < cutoff60 })
-        .map(c => ({ ...c, lastOrderDate: lastOrderMap[c.id] ?? null, daysSince: lastOrderMap[c.id] ? daysSince(lastOrderMap[c.id]) : null }))
+      // Last order per customer+product_name
+      const lastProductOrderMap = {}
+      for (const l of (activityLines ?? [])) {
+        const key = `${l.customer_id}__${l.product_name}`
+        if (!lastProductOrderMap[key]) lastProductOrderMap[key] = l.date
+      }
 
-      setInactiveCustomers(inactive)
+      // Build "Clienti da monitorare" — only Attivo customers with Attesa/Ritardo intervals
+      const activeCustomerMap = {}
+      for (const c of (customers ?? [])) {
+        if (c.offer_status === 'ongoing') activeCustomerMap[c.id] = c
+      }
+
+      const items = []
+      for (const interval of (intervals ?? [])) {
+        const customer = activeCustomerMap[interval.customer_id]
+        if (!customer) continue
+        const key = `${interval.customer_id}__${interval.product_name}`
+        const lastDate = lastProductOrderMap[key]
+        const ds = lastDate ? daysSince(lastDate) : Infinity
+        const overdue = ds === Infinity ? interval.avg_days : ds - interval.avg_days
+        let status
+        if (ds === Infinity || ds >= interval.avg_days) status = 'ritardo'
+        else if (ds >= interval.avg_days * 0.8) status = 'attesa'
+        else continue
+        items.push({ customer_id: interval.customer_id, product_name: interval.product_name, avg_days: interval.avg_days, lastDate: lastDate ?? null, daysSince: ds === Infinity ? null : ds, overdue, status, customer })
+      }
+
+      // Sort: ritardo first, then most overdue
+      items.sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'ritardo' ? -1 : 1
+        return b.overdue - a.overdue
+      })
+
+      setMonitorItems(items)
       setRecentNotes(notes ?? [])
 
       // Chart
@@ -179,8 +211,6 @@ export default function Dashboard() {
       setLoading(false)
     }
   }
-
-  const sectorLabel = s => s === 'glues' ? 'Colle' : 'Abrasivi'
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -242,36 +272,42 @@ export default function Dashboard() {
               </section>
             )}
 
-            {/* ── Inactive customers ─────────────────────── */}
+            {/* ── Clienti da monitorare ──────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
+                <div className="w-2.5 h-2.5 rounded-full bg-orange-400 flex-shrink-0" />
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                  Clienti senza ordini da +{INACTIVE_DAYS} giorni
+                  Clienti da monitorare
                 </h2>
               </div>
-              {inactiveCustomers.length === 0 ? (
+              {monitorItems.length === 0 ? (
                 <div className="bg-white rounded-xl p-5 text-center text-gray-400 text-sm border border-gray-100">
-                  Tutti i clienti hanno ordinato di recente
+                  Nessun prodotto in ritardo o in attesa
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {inactiveCustomers.map(customer => (
-                    <button key={customer.id} onClick={() => navigate(`/customers/${customer.id}`)}
+                  {monitorItems.map((item, idx) => (
+                    <button key={idx} onClick={() => navigate(`/customers/${item.customer_id}`)}
                       className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-navy-800 truncate">{customer.company_name}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{sectorLabel(customer.sector)}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-navy-800 truncate">{item.customer.company_name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">{item.product_name}</p>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          {customer.lastOrderDate ? (
-                            <>
-                              <p className="text-xs font-medium text-red-500">{customer.daysSince} giorni fa</p>
-                              <p className="text-xs text-gray-400 mt-0.5">{formatDate(customer.lastOrderDate)}</p>
-                            </>
-                          ) : (
-                            <p className="text-xs font-medium text-gray-400">Nessun ordine</p>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            {item.daysSince !== null ? (
+                              <p className="text-xs text-gray-400">{item.daysSince}g fa</p>
+                            ) : (
+                              <p className="text-xs text-gray-400">Nessun ordine</p>
+                            )}
+                            <p className="text-xs text-gray-300 mt-0.5">ogni ~{item.avg_days}g</p>
+                          </div>
+                          {item.status === 'attesa' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium whitespace-nowrap">Attesa ordine</span>
+                          )}
+                          {item.status === 'ritardo' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium whitespace-nowrap">Ritardo</span>
                           )}
                         </div>
                       </div>

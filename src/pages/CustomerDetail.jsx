@@ -10,16 +10,6 @@ import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 
 /* ── constants ───────────────────────────────────────────── */
-const STATUS_OPTIONS = [
-  { value: 'ongoing', label: 'Attivo',    bg: 'bg-green-500  border-green-500'  },
-  { value: 'pending', label: 'In attesa', bg: 'bg-yellow-500 border-yellow-500' },
-  { value: 'expired', label: 'Rifiutato', bg: 'bg-red-500    border-red-500'    },
-]
-const STATUS_BG = {
-  ongoing: 'bg-green-50  border-green-200',
-  pending: 'bg-yellow-50 border-yellow-200',
-  expired: 'bg-red-50    border-red-200',
-}
 const fieldCls = 'w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white'
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -73,6 +63,14 @@ function emptyLine() {
 }
 function emptyOffer() {
   return { date: today(), product_id: '', product_name: '', proposed_price: '', notes: '' }
+}
+
+/* ── interval status ─────────────────────────────────────── */
+function intervalStatus(daysSince, avgDays) {
+  if (!avgDays || avgDays <= 0) return null
+  if (daysSince >= avgDays) return 'ritardo'
+  if (daysSince >= avgDays * 0.8) return 'attesa'
+  return 'regolare'
 }
 
 /* ── margin color ────────────────────────────────────────── */
@@ -163,16 +161,23 @@ export default function CustomerDetail() {
   /* ── status ─────────────────────────────────────────────── */
   const [statusSaving, setStatusSaving] = useState(false)
 
+  /* ── intervals ──────────────────────────────────────────── */
+  const [intervals,           setIntervals]           = useState({})
+  const [editIntervalProduct, setEditIntervalProduct] = useState(null)
+  const [editIntervalDays,    setEditIntervalDays]    = useState('')
+  const [savingInterval,      setSavingInterval]      = useState(false)
+
   /* ── fetch ─────────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      const [custRes, linesRes, offRes, notesRes, prodsRes] = await Promise.all([
+      const [custRes, linesRes, offRes, notesRes, prodsRes, intRes] = await Promise.all([
         supabase.from('customers').select('*').eq('id', id).single(),
         supabase.from('order_lines').select('*').eq('customer_id', id).order('date', { ascending: false }),
         supabase.from('offers').select('*').eq('customer_id', id).order('date', { ascending: false }),
         supabase.from('customer_notes').select('*').eq('customer_id', id).order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('name'),
+        supabase.from('customer_product_intervals').select('*').eq('customer_id', id),
       ])
       if (custRes.error)  throw custRes.error
       if (linesRes.error) throw linesRes.error
@@ -182,6 +187,11 @@ export default function CustomerDetail() {
       setOffers(offRes.error ? [] : (offRes.data ?? []))
       setNotes(notesRes.data ?? [])
       if (!prodsRes.error) setProducts(prodsRes.data ?? [])
+      if (!intRes.error) {
+        const intMap = {}
+        for (const row of intRes.data ?? []) intMap[row.product_name] = { id: row.id, avg_days: row.avg_days }
+        setIntervals(intMap)
+      }
     } catch (e) {
       setError('Errore nel caricamento del cliente.')
       console.error(e)
@@ -226,6 +236,21 @@ export default function CustomerDetail() {
       .from('customers').update({ offer_status: newStatus }).eq('id', id).select().single()
     if (!error) setCustomer(data)
     setStatusSaving(false)
+  }
+
+  /* ── handlers: intervals ─────────────────────────────────── */
+  const handleSaveInterval = async (productName) => {
+    const days = parseInt(editIntervalDays)
+    if (!days || days <= 0) { setEditIntervalProduct(null); return }
+    setSavingInterval(true)
+    const { data, error } = await supabase
+      .from('customer_product_intervals')
+      .upsert({ customer_id: id, product_name: productName, avg_days: days }, { onConflict: 'customer_id,product_name' })
+      .select().single()
+    if (!error) setIntervals(prev => ({ ...prev, [productName]: { id: data.id, avg_days: data.avg_days } }))
+    setEditIntervalProduct(null)
+    setEditIntervalDays('')
+    setSavingInterval(false)
   }
 
   /* ── handlers: add order line ───────────────────────────── */
@@ -568,22 +593,22 @@ export default function CustomerDetail() {
         </div>
 
         {/* ── Customer status ──────────────────────────────────── */}
-        <div className={`bg-white rounded-xl border p-4 ${STATUS_BG[customer.offer_status] ?? ''}`}>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold text-gray-700">Stato cliente</span>
-            {statusSaving && <Spinner size="sm" />}
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            {STATUS_OPTIONS.map(opt => (
-              <button key={opt.value} onClick={() => handleStatusChange(opt.value)} disabled={statusSaving}
-                className={`flex-1 min-w-[100px] py-2.5 rounded-lg text-sm font-semibold transition-all border ${
-                  customer.offer_status === opt.value
-                    ? `${opt.bg} text-white`
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                }`}>
-                {opt.label}
-              </button>
-            ))}
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-600">Stato cliente</span>
+            <div className="flex items-center gap-2">
+              {statusSaving && <Spinner size="sm" />}
+              <select
+                value={customer.offer_status}
+                onChange={e => handleStatusChange(e.target.value)}
+                disabled={statusSaving}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 bg-white"
+              >
+                <option value="ongoing">Attivo</option>
+                <option value="pending">In attesa</option>
+                <option value="expired">Rifiutato</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -626,9 +651,64 @@ export default function CustomerDetail() {
                   {groupedLines.map(([productName, lines], groupIdx) => (
                     <>
                       <tr key={`group-${groupIdx}`} className="bg-navy-800">
-                        <td colSpan={8} className="px-3 py-2 font-semibold text-white text-xs">
-                          {productName}
-                          <span className="ml-2 text-white/50 font-normal">{lines.length} {lines.length === 1 ? 'riga' : 'righe'}</span>
+                        <td colSpan={8} className="px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-white text-xs">
+                              {productName}
+                              <span className="ml-2 text-white/50 font-normal">{lines.length} {lines.length === 1 ? 'riga' : 'righe'}</span>
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {(() => {
+                                const interval = intervals[productName]
+                                const lastDate = lines[0]?.date
+                                if (!lastDate) return null
+                                const daysSince = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86_400_000)
+                                if (editIntervalProduct === productName) {
+                                  return (
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number" min="1" autoFocus
+                                        value={editIntervalDays}
+                                        onChange={e => setEditIntervalDays(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleSaveInterval(productName); if (e.key === 'Escape') setEditIntervalProduct(null) }}
+                                        className="w-16 px-2 py-0.5 text-xs rounded text-navy-800 bg-white border border-gray-200 focus:outline-none"
+                                        placeholder="giorni"
+                                      />
+                                      {interval?.avg_days && (
+                                        <span className="text-white/35 text-xs whitespace-nowrap">Ordine ogni {interval.avg_days}g</span>
+                                      )}
+                                      <button onClick={() => handleSaveInterval(productName)} disabled={savingInterval}
+                                        className="text-white/80 hover:text-white text-xs px-1">✓</button>
+                                      <button onClick={() => setEditIntervalProduct(null)}
+                                        className="text-white/50 hover:text-white text-xs px-1">✕</button>
+                                    </div>
+                                  )
+                                }
+                                const status = interval ? intervalStatus(daysSince, interval.avg_days) : null
+                                return (
+                                  <>
+                                    {interval && (
+                                      <>
+                                        <span className="text-white/50 text-xs">{daysSince}g</span>
+                                        {status === 'regolare' && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-300 font-medium">Regolare</span>}
+                                        {status === 'attesa'   && <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-200 font-medium">Attesa ordine</span>}
+                                        {status === 'ritardo'  && <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300 font-medium">Ritardo</span>}
+                                      </>
+                                    )}
+                                    <button
+                                      onClick={() => { setEditIntervalProduct(productName); setEditIntervalDays(interval ? String(interval.avg_days) : '') }}
+                                      className="p-1 rounded text-white/30 hover:text-white/80 transition-colors"
+                                      title={interval ? `Intervallo: ${interval.avg_days} giorni` : 'Imposta intervallo medio'}
+                                    >
+                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       {lines.map((line, rowIdx) => {

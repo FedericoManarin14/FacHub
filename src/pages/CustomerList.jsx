@@ -13,20 +13,11 @@ const STATUS_CONFIG = {
   expired: { label: 'Rifiutato', color: 'bg-red-100 text-red-700 border-red-200' },
 }
 
-const DOT_CONFIG = {
-  ongoing: 'bg-green-500',
-  pending: 'bg-yellow-500',
-  expired: 'bg-red-500',
-}
 
-function StatusBadge({ status }) {
+function StatusLabel({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending
-  const dot = DOT_CONFIG[status] || DOT_CONFIG.pending
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${cfg.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-      {cfg.label}
-    </span>
+    <span className="text-sm text-gray-400 flex-shrink-0">{cfg.label}</span>
   )
 }
 
@@ -414,7 +405,7 @@ export default function CustomerList() {
                         <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{customer.description}</p>
                       )}
                     </div>
-                    <StatusBadge status={customer.offer_status} />
+                    <StatusLabel status={customer.offer_status} />
                   </div>
                 </button>
                 <button

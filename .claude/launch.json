@@ -3,8 +3,11 @@
   "configurations": [
     {
       "name": "fachub",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/Users/federicomanarin/.nvm/versions/node/v24.13.1/bin/node",
+      "runtimeArgs": ["/Users/federicomanarin/.nvm/versions/node/v24.13.1/bin/npm", "run", "dev"],
+      "env": {
+        "PATH": "/Users/federicomanarin/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin"
+      },
       "port": 5173
     }
   ]

@@ -7,7 +7,8 @@
       "Bash(mv fachub/* .)",
       "Bash(mv fachub/.* .)",
       "Bash(rmdir fachub:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(pkill -f vite)"
     ]
   }
 }
