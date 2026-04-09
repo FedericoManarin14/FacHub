@@ -116,7 +116,7 @@ export default function StockDashboard() {
     setLoading(true)
     try {
       const [custRes, intRes, linesRes, stockRes] = await Promise.all([
-        supabase.from('customers').select('id, company_name').eq('offer_status', 'active'),
+        supabase.from('customers').select('id, company_name').eq('offer_status', 'ongoing'),
         supabase.from('customer_product_intervals').select('*'),
         supabase.from('order_lines').select('customer_id, product_name, quantity, date').order('date', { ascending: false }),
         supabase.from('warehouse_stock').select('*'),
