@@ -16,27 +16,31 @@ const inputCls = 'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-gray
 
 /* ══════════════════════════════════════════════════════════ */
 export default function StockWarehouse() {
-  const [loading, setLoading]         = useState(true)
-  const [stock, setStock]             = useState([])
-  const [products, setProducts]       = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [stock, setStock]       = useState([])
+  const [products, setProducts] = useState([])
 
-  /* inline edit state */
-  const [editingRow, setEditingRow]   = useState(null) // product_name
-  const [editQty, setEditQty]         = useState('')
-  const [editThreshold, setEditThreshold] = useState('')
-  const [saving, setSaving]           = useState(false)
+  /* ── full-row edit state (quantity only) ──────────────── */
+  const [editingRow, setEditingRow] = useState(null) // product_name
+  const [editQty, setEditQty]       = useState('')
+  const [saving, setSaving]         = useState(false)
 
-  /* add modal */
-  const [addOpen, setAddOpen]         = useState(false)
-  const [addProduct, setAddProduct]   = useState('')
-  const [addQty, setAddQty]           = useState('')
-  const [addSaving, setAddSaving]     = useState(false)
+  /* ── threshold inline edit state ─────────────────────── */
+  const [editingThreshold, setEditingThreshold] = useState(null) // product_name
+  const [editThresholdVal, setEditThresholdVal] = useState('')
+  const [savingThreshold, setSavingThreshold]   = useState(false)
 
-  /* import */
-  const fileRef                       = useRef(null)
-  const [importPreview, setImportPreview] = useState(null) // array of { product_name, quantity_kg }
-  const [importOpen, setImportOpen]   = useState(false)
-  const [importSaving, setImportSaving] = useState(false)
+  /* ── add modal ────────────────────────────────────────── */
+  const [addOpen, setAddOpen]   = useState(false)
+  const [addProduct, setAddProduct] = useState('')
+  const [addQty, setAddQty]     = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+
+  /* ── xlsx import ──────────────────────────────────────── */
+  const fileRef = useRef(null)
+  const [importPreview, setImportPreview] = useState(null)
+  const [importOpen, setImportOpen]       = useState(false)
+  const [importSaving, setImportSaving]   = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -51,40 +55,85 @@ export default function StockWarehouse() {
     setLoading(false)
   }
 
-  /* ── inline edit ──────────────────────────────────────── */
-  function startEdit(row) {
+  /* ── quantity edit ────────────────────────────────────── */
+  function startEditQty(row) {
     setEditingRow(row.product_name)
     setEditQty(String(row.quantity_kg ?? ''))
-    setEditThreshold(row.reorder_threshold_kg !== null && row.reorder_threshold_kg !== undefined
-      ? String(row.reorder_threshold_kg) : '')
+    // close threshold edit if open
+    setEditingThreshold(null)
+    setEditThresholdVal('')
   }
 
-  function cancelEdit() {
+  function cancelEditQty() {
     setEditingRow(null)
     setEditQty('')
-    setEditThreshold('')
   }
 
-  async function saveEdit(productName) {
+  async function saveEditQty(productName) {
     const qty = parseFloat(editQty)
-    if (isNaN(qty) || qty < 0) return cancelEdit()
+    if (isNaN(qty) || qty < 0) return cancelEditQty()
     setSaving(true)
-    const threshold = editThreshold !== '' ? parseFloat(editThreshold) : null
+    const row = stock.find(r => r.product_name === productName)
     const { data, error } = await supabase
       .from('warehouse_stock')
       .upsert(
-        { product_name: productName, quantity_kg: qty, reorder_threshold_kg: threshold, updated_at: new Date().toISOString() },
+        { product_name: productName, quantity_kg: qty, reorder_threshold_kg: row?.reorder_threshold_kg ?? null, updated_at: new Date().toISOString() },
         { onConflict: 'product_name' }
       )
       .select().single()
-    if (!error) {
-      setStock(prev => prev.map(r => r.product_name === productName ? data : r))
-    }
-    cancelEdit()
+    if (!error) setStock(prev => prev.map(r => r.product_name === productName ? data : r))
+    cancelEditQty()
     setSaving(false)
   }
 
-  /* ── delete ───────────────────────────────────────────── */
+  /* ── threshold edit ───────────────────────────────────── */
+  function startEditThreshold(row) {
+    setEditingThreshold(row.product_name)
+    setEditThresholdVal(
+      row.reorder_threshold_kg !== null && row.reorder_threshold_kg !== undefined
+        ? String(row.reorder_threshold_kg) : ''
+    )
+    // close qty edit if open
+    setEditingRow(null)
+    setEditQty('')
+  }
+
+  function cancelEditThreshold() {
+    setEditingThreshold(null)
+    setEditThresholdVal('')
+  }
+
+  async function saveThreshold(productName) {
+    setSavingThreshold(true)
+    const threshold = editThresholdVal !== '' ? parseFloat(editThresholdVal) : null
+    const row = stock.find(r => r.product_name === productName)
+    const { data, error } = await supabase
+      .from('warehouse_stock')
+      .upsert(
+        { product_name: productName, quantity_kg: row?.quantity_kg ?? 0, reorder_threshold_kg: threshold, updated_at: new Date().toISOString() },
+        { onConflict: 'product_name' }
+      )
+      .select().single()
+    if (!error) setStock(prev => prev.map(r => r.product_name === productName ? data : r))
+    cancelEditThreshold()
+    setSavingThreshold(false)
+  }
+
+  async function deleteThreshold(productName) {
+    setSavingThreshold(true)
+    const row = stock.find(r => r.product_name === productName)
+    const { data, error } = await supabase
+      .from('warehouse_stock')
+      .upsert(
+        { product_name: productName, quantity_kg: row?.quantity_kg ?? 0, reorder_threshold_kg: null, updated_at: new Date().toISOString() },
+        { onConflict: 'product_name' }
+      )
+      .select().single()
+    if (!error) setStock(prev => prev.map(r => r.product_name === productName ? data : r))
+    setSavingThreshold(false)
+  }
+
+  /* ── delete row ───────────────────────────────────────── */
   async function deleteRow(productName) {
     if (!window.confirm(`Rimuovere "${productName}" dal magazzino?`)) return
     await supabase.from('warehouse_stock').delete().eq('product_name', productName)
@@ -151,13 +200,10 @@ export default function StockWarehouse() {
       quantity_kg:  r.quantity_kg,
       updated_at:   new Date().toISOString(),
     }))
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('warehouse_stock')
       .upsert(rows, { onConflict: 'product_name' })
-      .select()
-    if (!error && data) {
-      await loadData()
-    }
+    if (!error) await loadData()
     setImportOpen(false)
     setImportPreview(null)
     setImportSaving(false)
@@ -169,13 +215,13 @@ export default function StockWarehouse() {
       <Topbar title="Magazzino" backTo="/stock" showLogout />
 
       <main className="max-w-4xl mx-auto px-4 py-5">
+
         {/* header actions */}
         <div className="flex items-center justify-between mb-4 gap-2">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
             {stock.length} {stock.length === 1 ? 'prodotto' : 'prodotti'}
           </h2>
           <div className="flex items-center gap-2">
-            {/* Import Excel */}
             <button
               onClick={() => fileRef.current?.click()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors"
@@ -187,7 +233,6 @@ export default function StockWarehouse() {
             </button>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
 
-            {/* Add product */}
             <button
               onClick={() => setAddOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-700 text-white text-xs font-semibold hover:bg-red-800 transition-colors"
@@ -204,7 +249,8 @@ export default function StockWarehouse() {
           <Spinner className="py-20" />
         ) : stock.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-100 py-12 text-center text-gray-400 text-sm">
-            Nessun prodotto nel magazzino.<br />
+            Nessun prodotto nel magazzino.
+            <br />
             <button onClick={() => setAddOpen(true)} className="mt-2 text-red-600 font-medium hover:underline text-sm">
               Aggiungi il primo prodotto
             </button>
@@ -212,61 +258,35 @@ export default function StockWarehouse() {
         ) : (
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
             {stock.map((row) => {
-              const isEditing   = editingRow === row.product_name
-              const underThreshold = row.reorder_threshold_kg !== null &&
-                row.reorder_threshold_kg !== undefined &&
-                +row.quantity_kg <= +row.reorder_threshold_kg
+              const isEditingQty  = editingRow === row.product_name
+              const isEditingThr  = editingThreshold === row.product_name
+              const hasThreshold  = row.reorder_threshold_kg !== null && row.reorder_threshold_kg !== undefined
+              const underThreshold = hasThreshold && +row.quantity_kg <= +row.reorder_threshold_kg
 
               return (
                 <div
                   key={row.product_name}
-                  className={`px-4 py-3 ${underThreshold && !isEditing ? 'bg-red-50' : ''}`}
+                  className={`px-4 py-3 transition-colors ${underThreshold && !isEditingQty && !isEditingThr ? 'bg-red-50' : ''}`}
                 >
-                  {isEditing ? (
-                    /* ── edit mode ── */
+                  {isEditingQty ? (
+                    /* ── Quantity edit mode ── */
                     <div className="space-y-2">
                       <p className="text-sm font-semibold text-gray-800">{row.product_name}</p>
-                      <div className="flex items-end gap-2">
-                        <div className="flex-1">
-                          <label className="text-xs text-gray-500 mb-1 block">Quantità (kg)</label>
-                          <input
-                            type="number" min="0" step="0.1" autoFocus
-                            value={editQty}
-                            onChange={e => setEditQty(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') saveEdit(row.product_name); if (e.key === 'Escape') cancelEdit() }}
-                            className={inputCls}
-                            placeholder="es. 150"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <label className="text-xs text-gray-500 mb-1 block">Soglia riordino (kg)</label>
-                          <div className="relative">
-                            <input
-                              type="number" min="0" step="0.1"
-                              value={editThreshold}
-                              onChange={e => setEditThreshold(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveEdit(row.product_name); if (e.key === 'Escape') cancelEdit() }}
-                              className={`${inputCls} pr-7`}
-                              placeholder="Opzionale"
-                            />
-                            {editThreshold !== '' && (
-                              <button
-                                onClick={() => setEditThreshold('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                title="Rimuovi soglia"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">Quantità (kg)</label>
+                        <input
+                          type="number" min="0" step="0.1" autoFocus
+                          value={editQty}
+                          onChange={e => setEditQty(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveEditQty(row.product_name); if (e.key === 'Escape') cancelEditQty() }}
+                          className={inputCls}
+                          placeholder="es. 150"
+                        />
                       </div>
                       <div className="flex items-center gap-2 justify-end pt-1">
-                        <button onClick={cancelEdit} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Annulla</button>
+                        <button onClick={cancelEditQty} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">Annulla</button>
                         <button
-                          onClick={() => saveEdit(row.product_name)}
+                          onClick={() => saveEditQty(row.product_name)}
                           disabled={saving}
                           className="text-xs bg-red-700 text-white px-3 py-1.5 rounded-lg hover:bg-red-800 transition-colors font-medium"
                         >
@@ -275,43 +295,104 @@ export default function StockWarehouse() {
                       </div>
                     </div>
                   ) : (
-                    /* ── view mode ── */
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                    /* ── View mode ── */
+                    <div className="space-y-2">
+                      {/* Row 1: product name + badge + action buttons */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <p className="text-sm font-semibold text-gray-800 truncate">{row.product_name}</p>
                           {underThreshold && (
                             <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium flex-shrink-0">Sotto soglia</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className={`text-sm font-medium ${underThreshold ? 'text-red-700' : 'text-gray-700'}`}>
-                            {fmt(row.quantity_kg)}
-                          </span>
-                          {row.reorder_threshold_kg !== null && row.reorder_threshold_kg !== undefined && (
-                            <span className="text-xs text-gray-400">soglia: {fmt(row.reorder_threshold_kg)}</span>
-                          )}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => startEditQty(row)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                            title="Modifica quantità"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteRow(row.product_name)}
+                            className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="Rimuovi prodotto"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          onClick={() => startEdit(row)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                          title="Modifica"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => deleteRow(row.product_name)}
-                          className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                          title="Rimuovi"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+
+                      {/* Row 2: quantity + threshold */}
+                      <div className="flex items-center gap-4 flex-wrap">
+                        {/* Quantity */}
+                        <span className={`text-sm font-medium ${underThreshold ? 'text-red-700' : 'text-gray-700'}`}>
+                          {fmt(row.quantity_kg)}
+                        </span>
+
+                        {/* Threshold field — inline editable */}
+                        <div className="flex items-center gap-1.5">
+                          {isEditingThr ? (
+                            /* threshold input */
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-400">Soglia:</span>
+                              <input
+                                type="number" min="0" step="0.1" autoFocus
+                                value={editThresholdVal}
+                                onChange={e => setEditThresholdVal(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveThreshold(row.product_name); if (e.key === 'Escape') cancelEditThreshold() }}
+                                className="w-20 px-2 py-0.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-red-700 bg-white"
+                                placeholder="kg"
+                              />
+                              <span className="text-xs text-gray-400">kg</span>
+                              <button
+                                onClick={() => saveThreshold(row.product_name)}
+                                disabled={savingThreshold}
+                                className="text-xs text-red-700 hover:text-red-900 font-medium px-1"
+                                title="Salva soglia"
+                              >✓</button>
+                              <button
+                                onClick={cancelEditThreshold}
+                                className="text-xs text-gray-400 hover:text-gray-600 px-1"
+                                title="Annulla"
+                              >✕</button>
+                            </div>
+                          ) : (
+                            /* threshold display */
+                            <div className="flex items-center gap-1">
+                              <span className={`text-xs ${hasThreshold ? 'text-gray-500' : 'text-gray-300'}`}>
+                                Soglia: {hasThreshold ? fmt(row.reorder_threshold_kg) : 'Nessuna soglia'}
+                              </span>
+                              {/* Pencil to edit threshold */}
+                              <button
+                                onClick={() => startEditThreshold(row)}
+                                className="p-0.5 rounded text-gray-300 hover:text-gray-500 transition-colors"
+                                title="Modifica soglia di riordino"
+                              >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              {/* × to delete threshold (only when set) */}
+                              {hasThreshold && (
+                                <button
+                                  onClick={() => deleteThreshold(row.product_name)}
+                                  disabled={savingThreshold}
+                                  className="p-0.5 rounded text-gray-300 hover:text-red-400 transition-colors"
+                                  title="Rimuovi soglia"
+                                >
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -337,9 +418,7 @@ export default function StockWarehouse() {
                 <option key={p.id} value={p.name}>{p.name}</option>
               ))}
             </select>
-            <p className="text-xs text-gray-400 mt-1">
-              Oppure inserisci manualmente:
-            </p>
+            <p className="text-xs text-gray-400 mt-1.5">Oppure inserisci manualmente:</p>
             <input
               type="text"
               value={addProduct}
@@ -373,7 +452,9 @@ export default function StockWarehouse() {
       <Modal isOpen={importOpen} onClose={() => { setImportOpen(false); setImportPreview(null) }} title="Anteprima importazione">
         {importPreview && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-500">{importPreview.length} {importPreview.length === 1 ? 'riga trovata' : 'righe trovate'}. Conferma per importare.</p>
+            <p className="text-sm text-gray-500">
+              {importPreview.length} {importPreview.length === 1 ? 'riga trovata' : 'righe trovate'}. Conferma per importare.
+            </p>
             <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50 bg-white">
               {importPreview.map((r, i) => (
                 <div key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
