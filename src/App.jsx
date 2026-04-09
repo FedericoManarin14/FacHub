@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard'
 import CustomerList from './pages/CustomerList'
 import CustomerDetail from './pages/CustomerDetail'
 import Products from './pages/Products'
+import StockDashboard from './pages/stock/StockDashboard'
+import StockWarehouse from './pages/stock/StockWarehouse'
 
 export default function App() {
   return (
@@ -42,6 +44,23 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Products />
+              </ProtectedRoute>
+            }
+          />
+          {/* FacStock */}
+          <Route
+            path="/stock"
+            element={
+              <ProtectedRoute>
+                <StockDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stock/warehouse"
+            element={
+              <ProtectedRoute>
+                <StockWarehouse />
               </ProtectedRoute>
             }
           />
