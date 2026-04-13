@@ -8,7 +8,12 @@
       "Bash(mv fachub/.* .)",
       "Bash(rmdir fachub:*)",
       "Bash(npm install:*)",
-      "Bash(pkill -f vite)"
+      "Bash(pkill -f vite)",
+      "Bash(export PATH=\"/Users/federicomanarin/.nvm/versions/node/v24.13.1/bin:$PATH\")",
+      "Bash(rm -rf node_modules)",
+      "Bash(sudo chown:*)",
+      "Bash(npm run:*)",
+      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/favicon.svg\")"
     ]
   }
 }

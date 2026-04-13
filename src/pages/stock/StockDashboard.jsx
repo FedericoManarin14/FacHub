@@ -10,7 +10,6 @@ function daysSinceDate(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000)
 }
 
-// FacHub-identical interval status
 function intervalStatus(ds, avgDays) {
   if (!avgDays || avgDays <= 0) return null
   if (ds <= avgDays) return 'regolare'
@@ -21,6 +20,18 @@ function intervalStatus(ds, avgDays) {
 function fmt(n) {
   if (n === null || n === undefined) return '—'
   return `${(+n).toLocaleString('it-IT', { maximumFractionDigits: 1 })} kg`
+}
+
+// Total stock per product: SUM(units × quantity_kg)
+function buildStockMap(rows) {
+  const map = {}
+  for (const row of rows) {
+    const units = row.units ?? 1
+    const kg    = +(row.quantity_kg) || 0
+    if (!map[row.product_name]) map[row.product_name] = 0
+    map[row.product_name] += units * kg
+  }
+  return map
 }
 
 /* ── sub-components ──────────────────────────────────────── */
@@ -46,7 +57,6 @@ function MonitorCard({ item, type }) {
   }
   const s = styles[type]
 
-  // Build timing label
   let timingLabel, timingColor
   if (type === 'imminenti') {
     if (item.remaining > 0) {
@@ -60,13 +70,8 @@ function MonitorCard({ item, type }) {
       timingColor = 'text-red-600 font-semibold'
     }
   } else {
-    if (item.days_since !== null) {
-      timingLabel = `Ultimo ordine ${item.days_since}g fa`
-      timingColor = type === 'attesa' ? 'text-yellow-700' : 'text-gray-600'
-    } else {
-      timingLabel = 'Nessun ordine registrato'
-      timingColor = 'text-gray-500'
-    }
+    timingLabel  = item.days_since !== null ? `Ultimo ordine ${item.days_since}g fa` : 'Nessun ordine registrato'
+    timingColor  = type === 'attesa' ? 'text-yellow-700' : 'text-gray-600'
   }
 
   return (
@@ -104,7 +109,7 @@ function EmptyState({ label }) {
 
 /* ══════════════════════════════════════════════════════════ */
 export default function StockDashboard() {
-  const [loading, setLoading] = useState(true)
+  const [loading,   setLoading]   = useState(true)
   const [imminenti, setImminenti] = useState([])
   const [attesa,    setAttesa]    = useState([])
   const [ritardo,   setRitardo]   = useState([])
@@ -119,16 +124,18 @@ export default function StockDashboard() {
         supabase.from('customers').select('id, company_name').eq('offer_status', 'ongoing'),
         supabase.from('customer_product_intervals').select('*'),
         supabase.from('order_lines').select('customer_id, product_name, quantity, date').order('date', { ascending: false }),
-        supabase.from('warehouse_stock').select('*'),
+        supabase.from('warehouse_stock').select('product_name, quantity_kg, units'),
       ])
 
       const activeCustomers = custRes.data ?? []
       const activeMap       = Object.fromEntries(activeCustomers.map(c => [c.id, c]))
       const intervals       = (intRes.data ?? []).filter(i => activeMap[i.customer_id])
       const lines           = linesRes.data ?? []
-      const stockMap        = Object.fromEntries((stockRes.data ?? []).map(s => [s.product_name, s]))
 
-      // Build last order date map per customer+product (lines already sorted desc)
+      // Total stock per product = SUM(units × quantity_kg)
+      const totalStockMap = buildStockMap(stockRes.data ?? [])
+
+      // Last order date per customer+product
       const lastOrderMap = {}
       for (const line of lines) {
         const key = `${line.customer_id}__${line.product_name}`
@@ -141,12 +148,12 @@ export default function StockDashboard() {
         const customer = activeMap[interval.customer_id]
         if (!customer) continue
 
-        const key      = `${interval.customer_id}__${interval.product_name}`
-        const lastDate = lastOrderMap[key]
-        const ds       = daysSinceDate(lastDate)                     // days since last order
-        const remaining = ds === Infinity ? null : interval.avg_days - ds  // days until next expected order
-        const status   = ds === Infinity ? 'ritardo' : intervalStatus(ds, interval.avg_days)
-        const stockEntry = stockMap[interval.product_name]
+        const key       = `${interval.customer_id}__${interval.product_name}`
+        const lastDate  = lastOrderMap[key]
+        const ds        = daysSinceDate(lastDate)
+        const remaining = ds === Infinity ? null : interval.avg_days - ds
+        const status    = ds === Infinity ? 'ritardo' : intervalStatus(ds, interval.avg_days)
+        const stockKg   = totalStockMap[interval.product_name] ?? null
 
         const item = {
           customer_id:   interval.customer_id,
@@ -155,11 +162,9 @@ export default function StockDashboard() {
           avg_days:      interval.avg_days,
           days_since:    ds === Infinity ? null : ds,
           remaining,
-          stock_kg:      stockEntry?.quantity_kg ?? null,
+          stock_kg: stockKg > 0 ? stockKg : null,
         }
 
-        // Ordini imminenti: order expected within 15 days (remaining 0–14)
-        // Attesa / Ritardo: already overdue (remaining < 0), use FacHub status
         if (remaining !== null && remaining >= 0 && remaining < 15) {
           imminentiArr.push(item)
         } else if (status === 'attesa') {
@@ -169,11 +174,8 @@ export default function StockDashboard() {
         }
       }
 
-      // Sort: imminenti by remaining asc (most urgent first)
       imminentiArr.sort((a, b) => a.remaining - b.remaining)
-      // Attesa: most overdue first
       attesaArr.sort((a, b) => (b.days_since ?? 0) - (a.days_since ?? 0))
-      // Ritardo: most overdue first
       ritardoArr.sort((a, b) => (b.days_since ?? Infinity) - (a.days_since ?? Infinity))
 
       setImminenti(imminentiArr)
@@ -195,11 +197,10 @@ export default function StockDashboard() {
 
       const demandArr = Object.entries(productContribs)
         .map(([product_name, total]) => {
-          const stockEntry = stockMap[product_name]
-          const stock_kg   = stockEntry?.quantity_kg ?? null
-          const expected   = Math.round(total * 10) / 10
-          const sufficient = stock_kg !== null ? stock_kg >= expected : null
-          return { product_name, expected_kg: expected, stock_kg, sufficient }
+          const stockKg  = totalStockMap[product_name] ?? null
+          const expected = Math.round(total * 10) / 10
+          const sufficient = stockKg !== null ? stockKg >= expected : null
+          return { product_name, expected_kg: expected, stock_kg: stockKg, sufficient }
         })
         .filter(d => d.expected_kg > 0)
         .sort((a, b) => a.product_name.localeCompare(b.product_name))
@@ -227,9 +228,7 @@ export default function StockDashboard() {
                 <EmptyState label="Nessun ordine previsto nei prossimi 15 giorni" />
               ) : (
                 <div className="space-y-2">
-                  {imminenti.map((item, i) => (
-                    <MonitorCard key={`imm-${i}`} item={item} type="imminenti" />
-                  ))}
+                  {imminenti.map((item, i) => <MonitorCard key={`imm-${i}`} item={item} type="imminenti" />)}
                 </div>
               )}
             </section>
@@ -241,9 +240,7 @@ export default function StockDashboard() {
                 <EmptyState label="Nessun prodotto in attesa di ordine" />
               ) : (
                 <div className="space-y-2">
-                  {attesa.map((item, i) => (
-                    <MonitorCard key={`att-${i}`} item={item} type="attesa" />
-                  ))}
+                  {attesa.map((item, i) => <MonitorCard key={`att-${i}`} item={item} type="attesa" />)}
                 </div>
               )}
             </section>
@@ -255,9 +252,7 @@ export default function StockDashboard() {
                 <EmptyState label="Nessun prodotto in ritardo" />
               ) : (
                 <div className="space-y-1.5">
-                  {ritardo.map((item, i) => (
-                    <MonitorCard key={`rit-${i}`} item={item} type="ritardo" />
-                  ))}
+                  {ritardo.map((item, i) => <MonitorCard key={`rit-${i}`} item={item} type="ritardo" />)}
                 </div>
               )}
             </section>
@@ -280,17 +275,11 @@ export default function StockDashboard() {
                           </p>
                         </div>
                         {d.sufficient === null ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 whitespace-nowrap">
-                            Scorte non registrate
-                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 whitespace-nowrap">Scorte non registrate</span>
                         ) : d.sufficient ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 whitespace-nowrap">
-                            ✅ Scorte sufficienti
-                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 whitespace-nowrap">✅ Scorte sufficienti</span>
                         ) : (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">
-                            ⚠️ Riordino consigliato
-                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">⚠️ Riordino consigliato</span>
                         )}
                       </div>
                     </div>
