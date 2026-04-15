@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import CustomerList from './pages/CustomerList'
 import CustomerDetail from './pages/CustomerDetail'
 import Products from './pages/Products'
+import ProductDetail from './pages/ProductDetail'
 import StockDashboard from './pages/stock/StockDashboard'
 import StockWarehouse from './pages/stock/StockWarehouse'
 
@@ -44,6 +45,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Products />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/products/:productName"
+            element={
+              <ProtectedRoute>
+                <ProductDetail />
               </ProtectedRoute>
             }
           />

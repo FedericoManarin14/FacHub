@@ -182,28 +182,38 @@ export default function StockDashboard() {
       setAttesa(attesaArr)
       setRitardo(ritardoArr)
 
-      /* ── Demand forecast — 30 days ─────────────────────── */
-      const productContribs = {}
-      for (const interval of intervals) {
-        const customerLines = lines
-          .filter(l => l.customer_id === interval.customer_id && l.product_name === interval.product_name)
-          .slice(0, 3)
-        if (customerLines.length === 0) continue
-        const avgQty       = customerLines.reduce((s, l) => s + (+l.quantity), 0) / customerLines.length
-        const contribution = (30 / interval.avg_days) * avgQty
-        if (!productContribs[interval.product_name]) productContribs[interval.product_name] = 0
-        productContribs[interval.product_name] += contribution
+      /* ── Demand forecast — real order history, last 6 months ── */
+      const sixMonthsAgo = new Date()
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+      const sixMonthsAgoStr = sixMonthsAgo.toISOString().split('T')[0]
+
+      // Fetch 6-month lines for active customers only
+      const { data: forecastLines } = await supabase
+        .from('order_lines')
+        .select('customer_id, product_name, quantity')
+        .gte('date', sixMonthsAgoStr)
+        .in('customer_id', activeCustomers.map(c => c.id))
+
+      // SUM(quantity) per product / 6 = avg monthly demand kg
+      const productTotals = {}
+      for (const l of (forecastLines ?? [])) {
+        if (!productTotals[l.product_name]) productTotals[l.product_name] = 0
+        productTotals[l.product_name] += +(l.quantity) || 0
       }
 
-      const demandArr = Object.entries(productContribs)
+      const demandArr = Object.entries(productTotals)
         .map(([product_name, total]) => {
-          const stockKg  = totalStockMap[product_name] ?? null
-          const expected = Math.round(total * 10) / 10
-          const sufficient = stockKg !== null ? stockKg >= expected : null
-          return { product_name, expected_kg: expected, stock_kg: stockKg, sufficient }
+          const avgMonthly = Math.round((total / 6) * 10) / 10
+          const stockKg    = totalStockMap[product_name] ?? null
+          const sufficient = stockKg !== null ? stockKg >= avgMonthly : null
+          return { product_name, expected_kg: avgMonthly, stock_kg: stockKg, sufficient }
         })
         .filter(d => d.expected_kg > 0)
-        .sort((a, b) => a.product_name.localeCompare(b.product_name))
+        // Sort: riordino first, then non-registrate, then sufficienti
+        .sort((a, b) => {
+          const rank = v => v === false ? 0 : v === null ? 1 : 2
+          return rank(a.sufficient) - rank(b.sufficient) || a.product_name.localeCompare(b.product_name)
+        })
 
       setDemand(demandArr)
     } catch (e) {

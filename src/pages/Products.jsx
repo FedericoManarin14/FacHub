@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import Topbar from '../components/Topbar'
 import BottomNav from '../components/BottomNav'
@@ -125,6 +126,7 @@ function ProductFormFields({ f, setF, err, supplierCosts, setSupplierCosts }) {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function Products() {
+  const navigate = useNavigate()
   const [products,        setProducts]        = useState([])
   const [costsMap,        setCostsMap]        = useState({})   // productId → cost[]
   const [selectedCostMap, setSelectedCostMap] = useState({})  // productId → selected cost id
@@ -393,6 +395,15 @@ export default function Products() {
                       <span className="text-xs font-semibold text-green-600 flex-shrink-0">{formatCurrency(salePrice)}/kg</span>
                     </div>
                   </div>
+
+                  {/* Info */}
+                  <button onClick={() => navigate(`/products/${encodeURIComponent(product.name)}`)}
+                    className="flex-shrink-0 flex items-center justify-center w-10 bg-white border border-gray-100 rounded-xl text-blue-400 hover:text-blue-600 hover:border-blue-200 transition-colors"
+                    aria-label="Info prodotto">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
 
                   {/* Edit */}
                   <button onClick={() => openEditProduct(product)}

@@ -81,9 +81,12 @@ export default function Dashboard() {
   const [chartData,    setChartData]    = useState([])
   const [kpis,         setKpis]         = useState(null)
   const [monitorItems, setMonitorItems] = useState([])
-  const [recentNotes,  setRecentNotes]  = useState([])
+  const [reminders,    setReminders]    = useState([])
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
+  const [newText,      setNewText]      = useState('')
+  const [newDate,      setNewDate]      = useState('')
+  const [addingReminder, setAddingReminder] = useState(false)
 
   const navigate = useNavigate()
 
@@ -114,23 +117,19 @@ export default function Dashboard() {
         { data: customers,     error: custErr   },
         { data: allLines,      error: linesErr  },
         { data: activityLines, error: actErr    },
-        { data: notes,         error: notesErr  },
+        { data: remindersData, error: remErr    },
         { data: intervals,     error: intErr    },
       ] = await Promise.all([
         supabase.from('customers').select('id, company_name, sector, offer_status').order('company_name'),
         supabase.from('order_lines').select('customer_id, date, sale_price, purchase_price, quantity').gte('date', windowStartStr),
         supabase.from('order_lines').select('customer_id, product_name, date').order('date', { ascending: false }),
-        supabase.from('customer_notes')
-          .select('id, text, created_at, customer_id, customers(company_name)')
-          .order('created_at', { ascending: false })
-          .limit(5),
+        supabase.from('reminders').select('*').order('due_date', { ascending: true }),
         supabase.from('customer_product_intervals').select('customer_id, product_name, avg_days'),
       ])
 
       if (custErr)  throw custErr
       if (linesErr) throw linesErr
       if (actErr)   throw actErr
-      if (notesErr) throw notesErr
 
       // Last order per customer (for KPI active count)
       const lastOrderMap = {}
@@ -173,7 +172,7 @@ export default function Dashboard() {
       })
 
       setMonitorItems(items)
-      setRecentNotes(notes ?? [])
+      setReminders(remindersData ?? [])
 
       // Chart
       const slots = buildMonthSlots(12)
@@ -210,6 +209,20 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function addReminder() {
+    if (!newText.trim() || !newDate) return
+    setAddingReminder(true)
+    const { data, error } = await supabase.from('reminders').insert({ text: newText.trim(), due_date: newDate }).select().single()
+    if (!error) setReminders(prev => [...prev, data].sort((a, b) => a.due_date.localeCompare(b.due_date)))
+    setNewText(''); setNewDate('')
+    setAddingReminder(false)
+  }
+
+  async function deleteReminder(id) {
+    await supabase.from('reminders').delete().eq('id', id)
+    setReminders(prev => prev.filter(r => r.id !== id))
   }
 
   return (
@@ -317,30 +330,64 @@ export default function Dashboard() {
               )}
             </section>
 
-            {/* ── Recent notes ───────────────────────────── */}
+            {/* ── Promemoria ─────────────────────────────── */}
             <section>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-navy-400 flex-shrink-0" />
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                  Ultime note aggiunte
-                </h2>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Promemoria</h2>
               </div>
-              {recentNotes.length === 0 ? (
+
+              {/* inline add form */}
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newText}
+                  onChange={e => setNewText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addReminder() }}
+                  placeholder="Nuovo promemoria…"
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white text-navy-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-navy-800"
+                />
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={e => setNewDate(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800"
+                />
+                <button
+                  onClick={addReminder}
+                  disabled={addingReminder || !newText.trim() || !newDate}
+                  className="px-4 py-2 bg-navy-800 text-white text-sm font-semibold rounded-xl hover:bg-navy-900 transition-colors disabled:opacity-50"
+                >
+                  {addingReminder ? '…' : 'Aggiungi'}
+                </button>
+              </div>
+
+              {reminders.length === 0 ? (
                 <div className="bg-white rounded-xl p-5 text-center text-gray-400 text-sm border border-gray-100">
-                  Nessuna nota presente
+                  Nessun promemoria
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {recentNotes.map(note => (
-                    <button key={note.id} onClick={() => navigate(`/customers/${note.customer_id}`)}
-                      className="w-full text-left bg-white rounded-xl p-4 border border-gray-100 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99]">
-                      <div className="flex items-start justify-between gap-3 mb-1.5">
-                        <p className="text-xs font-semibold text-navy-700">{note.customers?.company_name}</p>
-                        <p className="text-xs text-gray-400 flex-shrink-0">{formatDate(note.created_at)}</p>
+                  {reminders.map(r => {
+                    const overdue = new Date(r.due_date) < new Date(new Date().toISOString().split('T')[0])
+                    return (
+                      <div key={r.id}
+                        className={`flex items-center justify-between gap-3 bg-white rounded-xl px-4 py-3 border ${overdue ? 'border-red-200 bg-red-50' : 'border-gray-100'}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm font-medium ${overdue ? 'text-red-700' : 'text-navy-800'} truncate`}>{r.text}</p>
+                          <p className={`text-xs mt-0.5 ${overdue ? 'text-red-500' : 'text-gray-400'}`}>
+                            {overdue ? '⚠️ ' : ''}{formatDate(r.due_date)}
+                          </p>
+                        </div>
+                        <button onClick={() => deleteReminder(r.id)}
+                          className="flex-shrink-0 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
-                      <p className="text-sm text-gray-600 line-clamp-2">{note.text}</p>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>

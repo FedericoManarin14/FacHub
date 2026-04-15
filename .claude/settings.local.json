@@ -13,7 +13,10 @@
       "Bash(rm -rf node_modules)",
       "Bash(sudo chown:*)",
       "Bash(npm run:*)",
-      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/favicon.svg\")"
+      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/favicon.svg\")",
+      "Bash(npx vite:*)",
+      "Bash(xattr -c \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/logo.png\")",
+      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/logo.png\")"
     ]
   }
 }
