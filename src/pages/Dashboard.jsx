@@ -237,6 +237,25 @@ export default function Dashboard() {
           <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
         ) : (
           <>
+            {/* ── Mappa clienti shortcut ─────────────────── */}
+            <button
+              onClick={() => navigate('/map')}
+              className="w-full flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-4 hover:border-navy-200 hover:shadow-sm transition-all active:scale-[0.99] text-left"
+            >
+              <div className="w-10 h-10 rounded-xl bg-navy-50 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-navy-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-navy-800 text-sm">Mappa clienti</p>
+                <p className="text-xs text-gray-400 mt-0.5">Visualizza la posizione geografica dei clienti</p>
+              </div>
+              <svg className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
             {/* ── Revenue chart ──────────────────────────── */}
             <section className="bg-white rounded-xl border border-gray-100 p-4">
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">

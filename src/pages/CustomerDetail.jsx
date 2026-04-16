@@ -3,11 +3,20 @@ import { useParams } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
+import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import L from 'leaflet'
 import { supabase } from '../lib/supabase'
 import Topbar from '../components/Topbar'
 import BottomNav from '../components/BottomNav'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
+
+/* ── Fix Leaflet marker icons ─────────────────────────────── */
+import iconUrl from 'leaflet/dist/images/marker-icon.png'
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png'
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl })
 
 /* ── constants ───────────────────────────────────────────── */
 const fieldCls = 'w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base bg-white'
@@ -598,6 +607,41 @@ export default function CustomerDetail() {
             )}
           </div>
         </div>
+
+        {/* ── Location mini-map ────────────────────────────────── */}
+        <section className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-navy-800">Posizione</h2>
+            {customer.address && (
+              <p className="text-xs text-gray-400 truncate max-w-xs">{customer.address}</p>
+            )}
+          </div>
+          {customer.latitude && customer.longitude ? (
+            <div style={{ height: 200 }}>
+              <MapContainer
+                center={[customer.latitude, customer.longitude]}
+                zoom={14}
+                style={{ height: '100%', width: '100%' }}
+                scrollWheelZoom={false}
+                zoomControl={false}
+                attributionControl={false}
+              >
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <Marker position={[customer.latitude, customer.longitude]} />
+              </MapContainer>
+            </div>
+          ) : (
+            <div className="h-28 flex items-center justify-center bg-gray-50">
+              <div className="text-center px-4">
+                <svg className="w-6 h-6 text-gray-300 mx-auto mb-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                <p className="text-sm text-gray-400">Posizione non impostata</p>
+                <p className="text-xs text-gray-300 mt-0.5">Aggiorna l'indirizzo per visualizzarla</p>
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* ── Customer status ──────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-100 p-4">

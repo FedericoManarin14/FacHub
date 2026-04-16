@@ -16,7 +16,9 @@
       "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/favicon.svg\")",
       "Bash(npx vite:*)",
       "Bash(xattr -c \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/logo.png\")",
-      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/logo.png\")"
+      "Bash(chmod 644 \"/Users/federicomanarin/Desktop/Progetti/Progetto FacHub/public/logo.png\")",
+      "Bash(node -e \"const p = require\\('./node_modules/react-leaflet/package.json'\\); console.log\\(p.version, p.peerDependencies?.react\\)\")",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

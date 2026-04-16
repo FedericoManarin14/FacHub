@@ -9,6 +9,7 @@ import Products from './pages/Products'
 import ProductDetail from './pages/ProductDetail'
 import StockDashboard from './pages/stock/StockDashboard'
 import StockWarehouse from './pages/stock/StockWarehouse'
+import CustomerMap from './pages/CustomerMap'
 
 export default function App() {
   return (
@@ -53,6 +54,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProductDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/map"
+            element={
+              <ProtectedRoute>
+                <CustomerMap />
               </ProtectedRoute>
             }
           />

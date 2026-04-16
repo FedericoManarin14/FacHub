@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
+import { geocodeAddress } from '../lib/geocode'
 import Topbar from '../components/Topbar'
 import BottomNav from '../components/BottomNav'
 import Modal from '../components/Modal'
@@ -28,6 +29,7 @@ const EMPTY_FORM = {
   email: '',
   phone: '',
   offer_status: 'pending',
+  address: '',
 }
 
 /**
@@ -64,11 +66,15 @@ export default function CustomerList() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Geocoding
+  const [geocoding, setGeocoding] = useState(false)
+
   // Edit customer
   const [editTarget,  setEditTarget]  = useState(null)
   const [editForm,    setEditForm]    = useState(EMPTY_FORM)
   const [editError,   setEditError]   = useState('')
   const [savingEdit,  setSavingEdit]  = useState(false)
+  const [editGeocoding, setEditGeocoding] = useState(false)
 
   // Excel import
   const fileInputRef                                  = useRef(null)
@@ -115,9 +121,17 @@ export default function CustomerList() {
     setSaving(true)
     setFormError('')
 
+    let latitude = null, longitude = null
+    if (form.address?.trim()) {
+      setGeocoding(true)
+      const coords = await geocodeAddress(form.address)
+      if (coords) { latitude = coords.lat; longitude = coords.lon }
+      setGeocoding(false)
+    }
+
     const { data, error } = await supabase
       .from('customers')
-      .insert([form])
+      .insert([{ ...form, latitude, longitude }])
       .select()
       .single()
 
@@ -152,6 +166,7 @@ export default function CustomerList() {
       email:        customer.email || '',
       phone:        customer.phone || '',
       offer_status: customer.offer_status,
+      address:      customer.address || '',
     })
     setEditError('')
   }
@@ -160,9 +175,21 @@ export default function CustomerList() {
     e.preventDefault()
     if (!editForm.company_name.trim()) { setEditError('Il nome azienda è obbligatorio.'); return }
     setSavingEdit(true); setEditError('')
+
+    let latitude = editTarget.latitude ?? null
+    let longitude = editTarget.longitude ?? null
+    const addressChanged = editForm.address.trim() !== (editTarget.address || '').trim()
+    if (editForm.address?.trim() && addressChanged) {
+      setEditGeocoding(true)
+      const coords = await geocodeAddress(editForm.address)
+      if (coords) { latitude = coords.lat; longitude = coords.lon }
+      else { latitude = null; longitude = null }
+      setEditGeocoding(false)
+    }
+
     const { data, error } = await supabase
       .from('customers')
-      .update(editForm)
+      .update({ ...editForm, latitude, longitude })
       .eq('id', editTarget.id)
       .select()
       .single()
@@ -525,6 +552,18 @@ export default function CustomerList() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Indirizzo</label>
+            <input
+              type="text"
+              value={form.address}
+              onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base"
+              placeholder="Es. Via Roma 1, Milano, Italia"
+            />
+            <p className="text-xs text-gray-400 mt-1">Usato per posizionare il cliente sulla mappa</p>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Stato cliente</label>
             <select
               value={form.offer_status}
@@ -547,11 +586,11 @@ export default function CustomerList() {
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || geocoding}
               className="flex-1 py-3 bg-navy-800 text-white rounded-xl font-semibold hover:bg-navy-900 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              {saving && <Spinner size="sm" />}
-              {saving ? 'Salvataggio...' : 'Aggiungi'}
+              {(saving || geocoding) && <Spinner size="sm" />}
+              {geocoding ? 'Geocoding...' : saving ? 'Salvataggio...' : 'Aggiungi'}
             </button>
           </div>
         </form>
@@ -664,6 +703,14 @@ export default function CustomerList() {
               placeholder="+39 02 1234567" />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Indirizzo</label>
+            <input type="text" value={editForm.address}
+              onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 text-base"
+              placeholder="Es. Via Roma 1, Milano, Italia" />
+            <p className="text-xs text-gray-400 mt-1">Modificando l'indirizzo ricalcola automaticamente la posizione sulla mappa</p>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Stato cliente</label>
             <select value={editForm.offer_status}
               onChange={e => setEditForm(f => ({ ...f, offer_status: e.target.value }))}
@@ -678,10 +725,10 @@ export default function CustomerList() {
               className="flex-1 py-3 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors">
               Annulla
             </button>
-            <button type="submit" disabled={savingEdit}
+            <button type="submit" disabled={savingEdit || editGeocoding}
               className="flex-1 py-3 bg-navy-800 text-white rounded-xl font-semibold hover:bg-navy-900 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-              {savingEdit && <Spinner size="sm" />}
-              {savingEdit ? 'Salvataggio...' : 'Salva modifiche'}
+              {(savingEdit || editGeocoding) && <Spinner size="sm" />}
+              {editGeocoding ? 'Geocoding...' : savingEdit ? 'Salvataggio...' : 'Salva modifiche'}
             </button>
           </div>
         </form>
