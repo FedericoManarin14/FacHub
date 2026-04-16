@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { supabase } from '../lib/supabase'
+import { geocodeAddress } from '../lib/geocode'
 import Topbar from '../components/Topbar'
 import BottomNav from '../components/BottomNav'
 import Modal from '../components/Modal'
@@ -105,6 +106,20 @@ function TrashIcon() {
   )
 }
 
+/* ── Re-center map when coordinates change ───────────────── */
+function MapRecenter({ lat, lng }) {
+  const map = useMap()
+  const prev = useRef(null)
+  useEffect(() => {
+    if (lat == null || lng == null) return
+    const key = `${lat},${lng}`
+    if (prev.current === key) return
+    prev.current = key
+    map.flyTo([lat, lng], 14, { animate: true, duration: 0.8 })
+  }, [lat, lng, map])
+  return null
+}
+
 /* ══════════════════════════════════════════════════════════ */
 export default function CustomerDetail() {
   const { id } = useParams()
@@ -170,6 +185,12 @@ export default function CustomerDetail() {
   /* ── status ─────────────────────────────────────────────── */
   const [statusSaving, setStatusSaving] = useState(false)
 
+  /* ── address ────────────────────────────────────────────── */
+  const [addressInput,   setAddressInput]   = useState('')
+  const [savingAddress,  setSavingAddress]  = useState(false)
+  const [addressError,   setAddressError]   = useState('')
+  const addressInitRef = useRef(false)
+
   /* ── intervals ──────────────────────────────────────────── */
   const [intervals,           setIntervals]           = useState({})
   const [editIntervalProduct, setEditIntervalProduct] = useState(null)
@@ -210,6 +231,42 @@ export default function CustomerDetail() {
   }, [id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Initialise address input once after customer loads
+  useEffect(() => {
+    if (customer && !addressInitRef.current) {
+      addressInitRef.current = true
+      setAddressInput(customer.address || '')
+    }
+  }, [customer])
+
+  /* ── handlers: address ──────────────────────────────────── */
+  const handleSaveAddress = async () => {
+    const addr = addressInput.trim()
+    setSavingAddress(true)
+    setAddressError('')
+
+    const coords = addr ? await geocodeAddress(addr) : null
+
+    const updates = {
+      address:   addr || null,
+      latitude:  coords?.lat  ?? null,
+      longitude: coords?.lon  ?? null,
+    }
+
+    const { data, error } = await supabase
+      .from('customers')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (!error && data) {
+      setCustomer(prev => ({ ...prev, ...data }))
+      if (addr && !coords) setAddressError('Indirizzo non trovato — posizione non aggiornata sulla mappa.')
+    }
+    setSavingAddress(false)
+  }
 
   /* ── derived data ───────────────────────────────────────── */
   const chartData = getLast12Months().map(({ year, month, label }) => {
@@ -608,14 +665,35 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        {/* ── Location mini-map ────────────────────────────────── */}
+        {/* ── Indirizzo + mappa ────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-navy-800">Posizione</h2>
-            {customer.address && (
-              <p className="text-xs text-gray-400 truncate max-w-xs">{customer.address}</p>
+          {/* Address input */}
+          <div className="px-4 pt-4 pb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Indirizzo</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={addressInput}
+                onChange={e => { setAddressInput(e.target.value); setAddressError('') }}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveAddress() }}
+                placeholder="Es. Via Roma 1, Treviso, Italia"
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl text-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-800 bg-white"
+              />
+              <button
+                onClick={handleSaveAddress}
+                disabled={savingAddress}
+                className="flex-shrink-0 px-4 py-2 bg-navy-800 text-white text-sm font-semibold rounded-xl hover:bg-navy-900 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {savingAddress && <Spinner size="sm" />}
+                {savingAddress ? 'Salvo…' : 'Salva'}
+              </button>
+            </div>
+            {addressError && (
+              <p className="text-xs text-orange-600 mt-1.5">{addressError}</p>
             )}
           </div>
+
+          {/* Map or placeholder */}
           {customer.latitude && customer.longitude ? (
             <div style={{ height: 200 }}>
               <MapContainer
@@ -628,17 +706,14 @@ export default function CustomerDetail() {
               >
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 <Marker position={[customer.latitude, customer.longitude]} />
+                <MapRecenter lat={customer.latitude} lng={customer.longitude} />
               </MapContainer>
             </div>
           ) : (
-            <div className="h-28 flex items-center justify-center bg-gray-50">
-              <div className="text-center px-4">
-                <svg className="w-6 h-6 text-gray-300 mx-auto mb-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-                <p className="text-sm text-gray-400">Posizione non impostata</p>
-                <p className="text-xs text-gray-300 mt-0.5">Aggiorna l'indirizzo per visualizzarla</p>
-              </div>
+            <div className="h-28 flex items-center justify-center bg-gray-50 border-t border-gray-100">
+              <p className="text-sm text-gray-400 px-4 text-center">
+                Posizione non impostata — inserisci l'indirizzo per visualizzarla
+              </p>
             </div>
           )}
         </section>
